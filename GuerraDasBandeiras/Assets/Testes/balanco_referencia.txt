@@ -1,0 +1,63 @@
+{
+  "CamoDuration": 8,
+  "CamoCooldown": 25,
+  "CamoAmbushDamage": 1.4,
+  "ForestAmbushDamage": 1.2,
+  "CamoDetectRadius": 45,
+  "StanceDuration": 6,
+  "StanceCooldown": 28,
+  "StanceReduction": 0.35,
+  "StanceSpeed": 0.6,
+  "GuardianArrowTaken": 0.5,
+  "ShieldWallReduction": 0.15,
+  "ChargeDuration": 4,
+  "ChargeCooldown": 18,
+  "ChargeDamage": 1.6,
+  "ChargeStun": 0.6,
+  "ChargeSpeed": 1.4,
+  "RunChargeDamage": 1.3,
+  "RunChargeExposed": 1.5,
+  "VeuDuration": 8,
+  "VeuCooldown": 120,
+  "ForestRegen": 1,
+  "FortifyDuration": 12,
+  "FortifyCooldown": 120,
+  "FortifyReduction": 0.35,
+  "FortifyHeal": 0.1,
+  "CoordDuration": 8,
+  "CoordCooldown": 120,
+  "CoordSpeed": 1.15,
+  "CoordDamage": 1.1,
+  "CavalryPassive": 1.1,
+  "FirstPowerDelay": 60,
+  "MaxDamageReduction": 0.5,
+  "MaxBonusDamage": 1.8,
+  "AmWoodBonus": 1.3,
+  "AmOpenFieldPenalty": 1.06,
+  "MgOreBonus": 1.3,
+  "MgUnitSpeed": 0.9,
+  "RsFoodBonus": 1.12,
+  "RsPlainSpeed": 1.05,
+  "AiFirstAttack": 300,
+  "AiWaveSize": 8,
+  "FlagFoodBonus": 1.1,
+  "FlagDefense": 0.1
+}
+unidade Worker: custo 50/0/0 tempo 8 vida 40 dano 3 alcance 8 recarga 1.2 vel 92 visão 5 pop 1 hab 0/0
+unidade Swordsman: custo 35/0/15 tempo 10 vida 120 dano 11 alcance 8 recarga 1 vel 78 visão 6 pop 1 hab 0/0
+unidade Spearman: custo 40/20/0 tempo 10 vida 95 dano 9 alcance 14 recarga 1.1 vel 80 visão 6 pop 1 hab 0/0
+unidade Archer: custo 40/10/0 tempo 11 vida 60 dano 9 alcance 250 recarga 1.5 vel 80 visão 7 pop 1 hab 0/0
+unidade Scout: custo 55/0/10 tempo 9 vida 70 dano 6 alcance 8 recarga 0.9 vel 150 visão 9 pop 1 hab 0/0
+unidade Ram: custo 0/120/40 tempo 18 vida 220 dano 45 alcance 8 recarga 2.5 vel 55 visão 4 pop 3 hab 0/0
+unidade VigiaDaMata: custo 60/40/30 tempo 14 vida 75 dano 13 alcance 280 recarga 1.4 vel 92 visão 8 pop 1 hab 8/25
+unidade GuardiaoDasGerais: custo 60/0/60 tempo 15 vida 230 dano 13 alcance 8 recarga 1.2 vel 64 visão 6 pop 1 hab 6/28
+unidade LanceiroDosPampas: custo 90/20/30 tempo 15 vida 130 dano 13 alcance 12 recarga 1.1 vel 125 visão 7 pop 2 hab 4/18
+construção Centro: custo 0/300/100 tempo 60 vida 1800 tamanho 3 pop 10 ataque 6/5/1.6
+construção Casa: custo 0/40/0 tempo 14 vida 400 tamanho 2 pop 5 ataque 0/0/0
+construção Coletor: custo 0/60/0 tempo 16 vida 500 tamanho 2 pop 0 ataque 0/0/0
+construção Quartel: custo 0/100/0 tempo 28 vida 900 tamanho 3 pop 0 ataque 0/0/0
+construção Torre: custo 0/80/30 tempo 22 vida 700 tamanho 2 pop 0 ataque 10/5.5/1.4
+construção Oficina: custo 0/80/40 tempo 26 vida 800 tamanho 2 pop 0 ataque 0/0/0
+facção Amazonas: coleta 1/1.3/1 mata 1.05 planície 1 vel 1 prédios 1 campo 1.06 torre 0 poder 8/120
+facção MinasGerais: coleta 1/1/1.3 mata 0.75 planície 1 vel 0.9 prédios 1.4 campo 1 torre 1.5 poder 12/120
+facção RioGrandeDoSul: coleta 1.12/1/1 mata 0.6 planície 1.05 vel 1 prédios 1 campo 1 torre 0 poder 8/120
