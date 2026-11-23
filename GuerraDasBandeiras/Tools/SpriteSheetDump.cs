@@ -41,4 +41,31 @@ public static class SpriteSheetDump
         using var fs = File.Create(outPath);
         rt.SaveAsPng(fs, rt.Width, rt.Height);
     }
+
+    /// <summary>
+    /// "GuerraDasBandeiras --chars saida.png": folha ampliada com todos os personagens gerados (Core/CharArt),
+    /// uma linha por facção, mais uma linha com o time azul (espelho), para revisar a pixel art.
+    /// </summary>
+    public static void RunChars(GraphicsDevice gd, SpriteBatch sb, string outPath)
+    {
+        var types = Enum.GetValues<Gameplay.UnitType>().Where(t => t != Gameplay.UnitType.Ram).ToArray();
+        var rows = new (Gameplay.FactionId fac, int set)[] { (Gameplay.FactionId.Amazonas, 2), (Gameplay.FactionId.MinasGerais, 3), (Gameplay.FactionId.RioGrandeDoSul, 1), (Gameplay.FactionId.RioGrandeDoSul, 0) };
+        const int cell = 130;
+        var rt = new RenderTarget2D(gd, cell * types.Length, cell * rows.Length + 30);
+        gd.SetRenderTarget(rt);
+        gd.Clear(new Color(84, 150, 84));
+        sb.Begin(samplerState: SamplerState.PointClamp);
+        var f = Assets.FontNarrow(14);
+        for (int i = 0; i < types.Length; i++) sb.DrawString(f, types[i].ToString(), new Vector2(i * cell + 4, 6), Color.White);
+        for (int r = 0; r < rows.Length; r++)
+            for (int i = 0; i < types.Length; i++)
+            {
+                var t = CharArt.Get(types[i], rows[r].fac, rows[r].set);
+                sb.Draw(t, new Vector2(i * cell + (cell - t.Width * 1.6f) / 2, 30 + r * cell + 8), null, Color.White, 0, Vector2.Zero, 1.6f, SpriteEffects.None, 0);
+            }
+        sb.End();
+        gd.SetRenderTarget(null);
+        using var fs = File.Create(outPath);
+        rt.SaveAsPng(fs, rt.Width, rt.Height);
+    }
 }

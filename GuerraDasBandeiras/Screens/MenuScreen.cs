@@ -64,18 +64,24 @@ public class MenuScreen : Screen
         if (_help) DrawHelp(sb);
         else
         {
-            sb.TextCenter(Assets.FontNarrow(18), "CADERNO DE CONCEITO  •  PROTÓTIPO", new Vector2(c.X, c.Y - 220), Pal.Paper * 0.8f);
-            sb.TextCenter(Assets.Font(34), "BRASIL:", new Vector2(c.X, c.Y - 175), Pal.Paper);
-            sb.TextCenter(Assets.Font(58), "GUERRA DAS BANDEIRAS", new Vector2(c.X, c.Y - 120), Pal.Gold);
-            // as três bandeiras da demo tremulando sob o título
             float tm = (float)Environment.TickCount / 1000f;
+            // logo oficial ("Heróis do Brasil"), com moldura dourada e um leve "respirar"
+            var logo = Assets.Image("logo");
+            float ls = 318 * (1f + 0.008f * MathF.Sin(tm * 1.6f));
+            var lc = new Vector2(c.X, c.Y - 222);
+            var lr = new Rectangle((int)(lc.X - ls / 2), (int)(lc.Y - ls / 2), (int)ls, (int)ls);
+            sb.Fill(new Rectangle(lr.X + 6, lr.Y + 8, lr.Width, lr.Height), Color.Black * 0.35f);
+            sb.Fill(new Rectangle(lr.X - 4, lr.Y - 4, lr.Width + 8, lr.Height + 8), Pal.Gold);
+            sb.Draw(logo, lr, Color.White);
+            // as três bandeiras da demo tremulando dos lados do logo
+            var flagPos = new[] { new Vector2(c.X - 300, c.Y - 290), new Vector2(c.X + 240, c.Y - 240), new Vector2(c.X - 300, c.Y - 180) };
             for (int i = 0; i < 3; i++)
             {
-                var fx = new Vector2(c.X - 327 + i * 300, c.Y - 268);
+                var fx = flagPos[i];
                 Gfx.Line(sb, fx + new Vector2(0, -6), fx + new Vector2(0, 50), new Color(90, 64, 40), 3);
                 FlagArt.DrawWaving(sb, (FactionId)i, fx + new Vector2(1, -4), 54, 36, tm, i * 1.7f);
             }
-            sb.TextCenter(Assets.FontNarrow(20), "Escolha seu estado. Erga sua base. Defenda sua bandeira.", new Vector2(c.X, c.Y - 62), Color.White);
+            sb.TextCenter(Assets.FontNarrow(20), "Escolha seu estado. Erga sua base. Defenda sua bandeira.", new Vector2(c.X, c.Y - 42), Color.White);
             Gui.DrawAll(sb, _buttons);
         }
         sb.TextCenter(Assets.FontNarrow(13), "Arte, fontes e sons: Kenney.nl (CC0)   •   Feito com .NET + MonoGame   •   F11: tela cheia",

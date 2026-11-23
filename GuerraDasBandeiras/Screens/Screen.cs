@@ -1,4 +1,5 @@
 using GuerraDasBandeiras.Core;
+using GuerraDasBandeiras.Gameplay;
 
 namespace GuerraDasBandeiras.Screens;
 
@@ -52,8 +53,12 @@ public static class MenuBackground
             float speed = 40 + (i % 4) * 12;
             float ux = ((i * 157 + _t * speed) % (g.W + 200)) - 100;
             float bob = MathF.Abs(MathF.Sin(_t * 10 + i)) * 3;
-            var tex = Assets.Unit(new[] { 15, 14, 21, 9, 3, 17, 22, 10 }[i % 8]);
-            sb.SpriteFeet(tex, new Vector2(ux, g.H * 0.8f + (i % 3) * 26 - bob), 0.9f, Color.White);
+            // uma tropa de cada estado da demo, com as roupas regionais
+            var kinds = new[] { UnitType.Archer, UnitType.Swordsman, UnitType.Spearman, UnitType.Worker, UnitType.Scout };
+            var fac = (FactionId)(i % 3);
+            var kind = i % 4 == 3 ? Defs.Factions[(int)fac].Special : kinds[i % kinds.Length];
+            var tex = CharArt.Get(kind == UnitType.LanceiroDosPampas ? UnitType.Spearman : kind, fac, fac switch { FactionId.Amazonas => 2, FactionId.MinasGerais => 3, _ => 1 });
+            sb.SpriteFeet(tex, new Vector2(ux, g.H * 0.8f + (i % 3) * 26 - bob), CharArt.WorldScale, Color.White);
         }
         sb.Fill(new Rectangle(0, 0, g.W, g.H), new Color(14, 26, 20) * 0.55f);
         sb.End();

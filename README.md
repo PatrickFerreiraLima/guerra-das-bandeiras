@@ -1,7 +1,7 @@
 # Brasil: Guerra das Bandeiras — protótipo
 
-Jogo de estratégia em tempo real feito em **C# / .NET 8 + MonoGame**, seguindo o caderno de conceito
-`Brasil Guerra das Bandeiras Demo.docx`.
+Jogo de estratégia em tempo real feito em **C# / .NET 8 + MonoGame**, seguindo o caderno
+`Brasil Guerra das Bandeiras - Caderno Unificado.docx` (concepção, gameplay e identidade visual num só documento).
 
 ## Como rodar
 
@@ -31,8 +31,10 @@ Atalhos de linha de comando úteis no desenvolvimento:
 |---|---|
 | `dotnet run -- --quick` | Pula o menu e abre uma escaramuça |
 | `dotnet run -- --sheet folha.png` | Gera uma folha com todos os sprites numerados (para escolher assets) |
+| `dotnet run -- --chars personagens.png` | Gera uma folha ampliada com todos os personagens em pixel art (por facção e com o time azul do espelho) |
 | `dotnet run -- --shot img.png game 600` | Teste automático: IA x IA por 600 s simulados, salva captura + relatório `.txt` |
 | `dotnet run -- --shot img.png battle 5` | Captura de uma batalha montada na Bandeira do Sul |
+| `GB_FOCUS=31,19 dotnet run -- --shot img.png scenery 2` | Captura com o mapa revelado, enquadrando o tile informado (bom para revisar cenário) |
 | `dotnet run -- --test resultado.txt` | Roda os 40 testes automáticos (regras, partidas, mouse/teclado simulados, sons, seleção, introdução, tela final, referência de balanceamento) |
 | `dotnet run -- --balance saida 30` | Diagnóstico de balanceamento: 180 partidas IA x IA (3 confrontos x 2 posições x 30 sementes), gera `saida.csv` e `saida.md` |
 | `dotnet run -- --snapshot Assets/Testes/balanco_referencia.txt` | Regrava a referência de balanceamento (só quando mudar os números de propósito) |
@@ -65,6 +67,9 @@ Todos os números de habilidades, comandantes, bandeiras, limites e bônus de fa
 - **IA** com estados desenvolver → reconhecer → atacar → recuar/defender, que usa habilidades e poderes, e 3 dificuldades.
 - Névoa de guerra, minimapa, grupos de controle, filas de produção, ponto de encontro, atacar-mover.
 - Escala da interface e volume ajustáveis (Esc), ajuda (F1), tela cheia (F11).
+- **Personagens em pixel art por facção** (gerados em `Core/CharArt.cs`): cocar de penas de arara, colete de folhas e urucum (AM); elmo de ferro, túnica com o triângulo de Minas, mineiro de lanterna e tropeiro (MG); chapéu campeiro, poncho, lenço e bombacha (RS). A cor do time aparece no lenço, na faixa ou no cinto.
+- **Paisagem brasileira** (só visual, `Gameplay/Scenery.cs`): coqueiros na beira do rio, ipês amarelos, roxos e brancos (alguns com tucano), vitórias-régias, capivaras, revoadas de araras; açaizeiros e bananeiras perto da base do Amazonas, igreja barroca colonial em Minas, araucárias e gado nos pampas.
+- **Logo oficial** no menu e como ícone do executável e da janela (`GuerraDasBandeiras/Icon.ico`, gerado a partir de `Guerra das Bandeiras_ Heróis do Brasil.png`).
 
 ## Estrutura do código
 
@@ -82,11 +87,11 @@ Todos os números de balanceamento (custos, vida, dano, velocidade, bônus) fica
 
 ## Créditos dos assets
 
-Todos de [Kenney.nl](https://kenney.nl), licença **CC0** (domínio público, uso comercial livre):
+Cenário, prédios, sons e fontes de título: [Kenney.nl](https://kenney.nl), licença **CC0** (domínio público, uso comercial livre) —
 Medieval RTS, Kenney Fonts, Interface Sounds, Impact Sounds, RPG Audio e Music Jingles (licenças em `Assets/Audio/LICENSE-kenney-*.txt`).
 Ambiência (vento, pássaros) gerada por código em `Core/Ambience.cs`, sem arquivos externos.
 Fonte de texto: Nunito (SIL Open Font License, `Assets/Fonts/LICENSE-Nunito-OFL.txt`).
-As bandeiras estaduais são desenhadas por código, estilizadas (`Core/FlagArt.cs`).
+As bandeiras estaduais (`Core/FlagArt.cs`), os personagens (`Core/CharArt.cs`) e a paisagem brasileira (`Gameplay/Scenery.cs`) são desenhados por código, estilizados.
+Logo: arte "Guerra das Bandeiras: Heróis do Brasil" do projeto (`Assets/Images/logo.png` e ícones `Icon.ico`/`Icon.bmp`).
 
 Relatórios de balanceamento: `docs/balanceamento/`.
-Medieval RTS, Kenney Fonts, Interface Sounds, Impact Sounds, RPG Audio.

@@ -105,6 +105,7 @@ public class WorldRenderer
         for (int x = x0; x <= x1; x++)
             for (int y = y0; y <= y1; y++)
                 DrawTileDetail(sb, x, y, time);
+        Scenery.DrawWaterProps(sb, _w, view, time);
 
         foreach (var d in _w.Decors)
             if (view.Intersects(d.Pos.X - 40, d.Pos.Y - 40, 80, 80))
@@ -112,6 +113,7 @@ public class WorldRenderer
                 if (d.Structure) { sb.Disc(d.Pos + new Vector2(8, -2), 26 * d.Scale, 8 * d.Scale, Color.Black * 0.18f); sb.SpriteFeet(Assets.Structure(d.Sprite), d.Pos, 0.5f * d.Scale, Color.White); }
                 else sb.SpriteFeet(Assets.Env(d.Sprite), d.Pos, 0.5f * d.Scale, Color.White);
             }
+        Scenery.DrawLandProps(sb, _w, view, time);
 
         foreach (var f in _w.Flags) DrawFlagGround(sb, f, time);
 
@@ -230,6 +232,9 @@ public class WorldRenderer
                 }
             }
         }
+
+        // revoadas de araras
+        Scenery.DrawBirds(sb, _w, view, time);
 
         // sombras de nuvens passando
         for (int i = 0; i < 7; i++)
@@ -610,8 +615,8 @@ public class WorldRenderer
     {
         if (u.Def.IsSiege) { DrawRam(sb, u, time); return; }
 
-        var tex = Defs.UnitSprite(u.Def, u.Owner.ColorSet);
-        float scale = 0.9f * u.Def.Scale;
+        var tex = Defs.UnitSprite(u.Def, u.Owner.ColorSet, u.Owner.Faction.Id);
+        float scale = Defs.SpriteScale(u.Def) * u.Def.Scale;
         bool camoOwn = u.Team == 0 && (u.CamoTime > 0 || (u.Def.Tags.HasFlag(Tag.Stealth) && u.RevealTimer <= 0 && u.InForest));
         // Camuflagem: some aos poucos (0,6 s) até ficar translúcido; furtivos na mata ficam meio apagados
         float camoAlpha = 1f;
@@ -633,18 +638,8 @@ public class WorldRenderer
             DrawHorse(sb, feet, dir, u.MovedThisFrame ? u.AnimTime : 0, col);
             feet += new Vector2(dir * 2, -14);
         }
-        // Amazonas: capa de folhas por trás do corpo (desenhada antes do sprite)
-        var fac = u.Owner.Faction.Id;
         float breath = u.MovedThisFrame || u.AttackAnim > 0 ? 0 : MathF.Sin(time * 2.2f + u.Id) * 0.025f; // respiração parada
         float bodyH = tex.Height * scale;
-        if (fac == FactionId.Amazonas && u.IsMilitary && col.A > 200)
-        {
-            var back = feet + new Vector2(-dir * 4, -bodyH * 0.55f);
-            var leaf = new Color(40, 120, 60);
-            sb.Disc(back + new Vector2(0, 2), 9, 12, leaf * 0.95f);
-            sb.Disc(back + new Vector2(-dir * 3, 8), 7, 7, new Color(60, 150, 70));
-            sb.Disc(back + new Vector2(dir * 2, -6), 6, 5, new Color(70, 160, 76));
-        }
 
         sb.Draw(tex, feet, null, col, lean, new Vector2(tex.Width / 2f, tex.Height), new Vector2(scale, scale * (1 + breath)), u.FacingLeft ? SpriteEffects.FlipHorizontally : SpriteEffects.None, 0f);
 
@@ -666,57 +661,7 @@ public class WorldRenderer
                 sb.Line(c0, c0 + new Vector2(dir * 14 * (1 - k), -3), new Color(230, 220, 200) * k, 1.5f);
         }
 
-        // acessórios regionais: silhueta diferente, não só a cor
-        var head = feet + new Vector2(0, -bodyH + 3);
-        if (col.A > 200)
-            switch (fac)
-            {
-                case FactionId.Amazonas:
-                    // capuz de folhas + pena
-                    sb.Disc(head + new Vector2(0, 2), 8.5f * u.Def.Scale, 5 * u.Def.Scale, new Color(46, 130, 62));
-                    if (u.IsMilitary)
-                    {
-                        sb.Line(head + new Vector2(-dir * 3, 1), head + new Vector2(-dir * 9, -10), new Color(40, 140, 70), 3);
-                        sb.Line(head + new Vector2(-dir * 4, 0), head + new Vector2(-dir * 8, -7), new Color(120, 200, 110), 1.5f);
-                    }
-                    break;
-                case FactionId.MinasGerais:
-                    if (u.IsWorker)
-                    {
-                        // capacete de mineiro com lanterna
-                        sb.Disc(head + new Vector2(0, 3), 7.5f, 4f, new Color(220, 180, 40));
-                        sb.Disc(head + new Vector2(dir * 4, 2), 2.5f, 2.5f, new Color(255, 250, 200) * (0.8f + 0.2f * MathF.Sin(time * 6 + u.Id)));
-                    }
-                    else
-                    {
-                        // elmo de ferro com crista
-                        sb.Disc(head + new Vector2(0, 3), 7.5f * u.Def.Scale, 4f * u.Def.Scale, new Color(120, 126, 136));
-                        sb.Fill(head + new Vector2(-1.5f, -3), new Vector2(3, 5), new Color(200, 70, 50));
-                        // infantaria comum carrega um broquel redondo
-                        if (u.Def.Tags.HasFlag(Tag.Infantry) && u.Def.Type != UnitType.GuardiaoDasGerais)
-                        {
-                            var sh = feet + new Vector2(dir * 9, -bodyH * 0.45f);
-                            sb.Disc(sh, 5.5f, 6.5f, new Color(130, 136, 148));
-                            sb.Ellipse(sh, 5.5f, 6.5f, new Color(80, 86, 98));
-                        }
-                    }
-                    break;
-                case FactionId.RioGrandeDoSul:
-                {
-                    // chapéu de aba larga (silhueta inconfundível) + lenço
-                    var brim = new Color(70, 46, 28);
-                    sb.Disc(head + new Vector2(0, 4), 12 * u.Def.Scale, 3.2f * u.Def.Scale, brim);
-                    sb.Disc(head + new Vector2(0, 0), 6.5f * u.Def.Scale, 5 * u.Def.Scale, new Color(92, 62, 36));
-                    sb.Fill(head + new Vector2(-6 * u.Def.Scale, 2), new Vector2(12 * u.Def.Scale, 1.5f), new Color(170, 40, 40));
-                    if (u.IsMilitary)
-                    {
-                        var neck = head + new Vector2(0, 12 * u.Def.Scale);
-                        sb.Line(neck + new Vector2(-dir * 4, 1), neck + new Vector2(-dir * 9, 5 + MathF.Sin(time * 8 + u.Id) * 1.5f), new Color(200, 40, 40), 2.5f);
-                    }
-                    break;
-                }
-            }
-
+        // chapéus, cocares, elmos e ponchos fazem parte do sprite gerado (Core/CharArt)
         if (u.Def.Type == UnitType.LanceiroDosPampas)
         {
             // lança longa com flâmula
@@ -763,19 +708,44 @@ public class WorldRenderer
         var dark = new Color(84, 54, 30).MultiplyAlpha(tint);
         var mane = new Color(50, 34, 22).MultiplyAlpha(tint);
         float g = anim > 0 ? MathF.Sin(anim * 16f) : 0;
-        // pernas
-        sb.Line(feet + new Vector2(-11, -10), feet + new Vector2(-11 + g * 4, 0), dark, 3);
-        sb.Line(feet + new Vector2(-6, -10), feet + new Vector2(-6 - g * 4, 0), horse, 3);
-        sb.Line(feet + new Vector2(7, -10), feet + new Vector2(7 - g * 4, 0), dark, 3);
-        sb.Line(feet + new Vector2(12, -10), feet + new Vector2(12 + g * 4, 0), horse, 3);
-        // corpo, pescoço, cabeça, rabo
+        var outline = new Color(40, 26, 16).MultiplyAlpha(tint);
+        var hoof = new Color(36, 30, 26).MultiplyAlpha(tint);
+        // pernas (com contorno e cascos escuros)
+        (float x, float sw, Color c)[] legs = { (-11, g, dark), (-6, -g, horse), (7, -g, dark), (12, g, horse) };
+        foreach (var (x, sw, c) in legs)
+        {
+            var top = feet + new Vector2(dir * x, -10);
+            var bottom = feet + new Vector2(dir * x + sw * 4, 0);
+            sb.Line(top, bottom, outline, 4.2f);
+            sb.Line(top, bottom, c, 2.8f);
+            sb.Disc(bottom + new Vector2(0, -0.5f), 2.4f, 1.6f, hoof);
+        }
+        // rabo, corpo, pescoço, cabeça (contorno primeiro)
+        sb.Line(feet + new Vector2(-dir * 16, -16), feet + new Vector2(-dir * 22, -6 + g * 2), outline, 4.5f);
+        sb.Line(feet + new Vector2(-dir * 16, -16), feet + new Vector2(-dir * 22, -6 + g * 2), mane, 3);
+        sb.Disc(feet + new Vector2(0, -14), 18.2f, 8.7f, outline);
+        sb.Line(feet + new Vector2(dir * 12, -16), feet + new Vector2(dir * 19, -27), outline, 8);
+        sb.Disc(feet + new Vector2(dir * 22, -28), 7.6f, 5.6f, outline);
         sb.Disc(feet + new Vector2(0, -14), 17, 7.5f, horse);
+        sb.Disc(feet + new Vector2(-dir * 4, -17), 10, 3, Color.White.MultiplyAlpha(tint) * 0.12f); // brilho no lombo
         sb.Line(feet + new Vector2(dir * 12, -16), feet + new Vector2(dir * 19, -27), horse, 6);
         sb.Disc(feet + new Vector2(dir * 22, -28), 6.5f, 4.5f, horse);
-        sb.Line(feet + new Vector2(dir * 14, -20), feet + new Vector2(dir * 18, -30), mane, 2.5f);
-        sb.Line(feet + new Vector2(-dir * 16, -16), feet + new Vector2(-dir * 22, -6 + g * 2), mane, 3);
-        // sela
-        sb.Disc(feet + new Vector2(0, -20), 7, 3, new Color(150, 40, 30).MultiplyAlpha(tint));
+        sb.Disc(feet + new Vector2(dir * 26, -27), 3, 2.6f, dark);                      // focinho
+        sb.Disc(feet + new Vector2(dir * 21, -30), 1.2f, 1.2f, hoof);                   // olho
+        sb.Line(feet + new Vector2(dir * 19, -32), feet + new Vector2(dir * 18, -35), dark, 2);   // orelha
+        sb.Line(feet + new Vector2(dir * 14, -20), feet + new Vector2(dir * 18, -31), mane, 2.5f);
+        // rédeas até a mão do cavaleiro e peitoral de couro
+        var leather = new Color(70, 40, 24).MultiplyAlpha(tint);
+        sb.Line(feet + new Vector2(dir * 25, -27), feet + new Vector2(dir * 7, -26), leather, 1.2f);
+        sb.Line(feet + new Vector2(dir * 13, -12), feet + new Vector2(dir * 16, -20), leather, 1.6f);
+        // arreio gaúcho: baixeiro listrado e pelego de lã branca por cima
+        sb.Fill(feet + new Vector2(-9, -20), new Vector2(18, 6), new Color(150, 40, 30).MultiplyAlpha(tint));
+        sb.Fill(feet + new Vector2(-9, -17), new Vector2(18, 1.5f), new Color(214, 168, 70).MultiplyAlpha(tint));
+        sb.Disc(feet + new Vector2(0, -21), 8, 3.4f, new Color(238, 232, 214).MultiplyAlpha(tint));
+        sb.Disc(feet + new Vector2(-3, -22), 3, 1.5f, Color.White.MultiplyAlpha(tint));
+        // estribo
+        sb.Line(feet + new Vector2(dir * 2, -17), feet + new Vector2(dir * 2, -11), leather, 1);
+        sb.Fill(feet + new Vector2(dir * 2 - 1.5f, -11), new Vector2(3, 1.5f), new Color(200, 200, 210).MultiplyAlpha(tint));
     }
 
     void DrawRam(SpriteBatch sb, Unit u, float time)

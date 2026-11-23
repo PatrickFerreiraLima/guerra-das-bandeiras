@@ -118,8 +118,16 @@ public static class Defs
     };
     public static readonly Color[] SetColors = { new(60, 130, 230), new(222, 70, 56), new(48, 168, 84), new(232, 178, 40) };
 
-    public static Texture2D UnitSprite(UnitDef d, int colorSet) =>
-        d.Role == Role.Ram ? Assets.Env(5) : Assets.Unit(SpriteSets[colorSet][(int)d.Role]);
+    /// <summary>
+    /// Sprite da unidade: personagens em pixel art gerados por facção (Core/CharArt), com a cor do time nos detalhes.
+    /// Sem facção informada, ela é deduzida do conjunto de cores padrão (verde = AM, amarelo = MG, vermelho = RS).
+    /// </summary>
+    public static Texture2D UnitSprite(UnitDef d, int colorSet, FactionId? faction = null) =>
+        d.Role == Role.Ram ? Assets.Env(5)
+        : CharArt.Get(d.Type, faction ?? colorSet switch { 2 => FactionId.Amazonas, 3 => FactionId.MinasGerais, _ => FactionId.RioGrandeDoSul }, colorSet);
+
+    /// <summary>Escala de desenho no mundo para o sprite da unidade (os gerados têm mais resolução que os do pacote).</summary>
+    public static float SpriteScale(UnitDef d) => d.Role == Role.Ram ? 0.9f : CharArt.WorldScale;
 
     public static readonly Dictionary<UnitType, UnitDef> Units = new()
     {

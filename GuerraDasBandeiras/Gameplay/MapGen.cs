@@ -148,6 +148,9 @@ public static class MapGen
             int sprite = t == Terrain.Hill ? 6 : r.Next(3) switch { 0 => 6, 1 => 13, _ => 12 };
             w.Decors.Add(new Decor { Pos = w.CenterOf(p) + new Vector2(r.Next(-20, 20), r.Next(-20, 20)), Sprite = sprite, Scale = 0.8f });
         }
+
+        // coqueiros, ipês, vitórias-régias, capivaras e os elementos de cada estado (gerador próprio: não altera o mapa)
+        Scenery.Populate(w);
     }
 
     /// <summary>Caminhos de terra da capital até as áreas de coleta e as travessias (só visual).</summary>
@@ -210,7 +213,7 @@ public static class MapGen
         }
     }
 
-    static bool NearFordOrBase(World w, int x, int y)
+    public static bool NearFordOrBase(World w, int x, int y)
     {
         foreach (int fy in FordRows)
             if (Math.Abs(y - fy) <= 3 && Math.Abs(x - RiverX(fy)) <= 6) return true;

@@ -101,6 +101,13 @@ public static class FactionScene
         // bandeira do Amazonas
         sb.Line(new Vector2(176, 132), new Vector2(176, 62), new Color(80, 55, 30), 2);
         FlagArt.DrawWaving(sb, FactionId.Amazonas, new Vector2(177, 63), 36, 24, t);
+        // açaizeiros ao lado da bandeira e um casal de araras cruzando a mata
+        Scenery.Acai(sb, new Vector2(146, 128), 0.5f, t, 7);
+        for (int i = 0; i < 2; i++)
+        {
+            float ax = (t * 34 + i * 26) % 420 - 50;
+            Scenery.Arara(sb, new Vector2(ax, 30 + i * 9 + MathF.Sin(t * 1.3f + i) * 3), 1, t * 9 + i * 1.7f, i, 0.6f);
+        }
         // névoa leve
         for (int i = 0; i < 4; i++)
         {
@@ -126,18 +133,9 @@ public static class FactionScene
         float breath = MathF.Sin(t * 2.1f) * 0.025f;
         float sway = MathF.Sin(t * 0.9f) * 1.5f;
         var feet = new Vector2(sway, 0);
-        float sc = 0.9f * def.Scale;
-        float h = tex.Height * sc;
+        float sc = Defs.SpriteScale(def) * def.Scale;
         sb.Disc(feet + new Vector2(4, 1), 16, 4, Color.Black * 0.3f);
-        // capa de folhas
-        var back = feet + new Vector2(-4, -h * 0.55f);
-        sb.Disc(back + new Vector2(0, 2), 9, 12, new Color(40, 120, 60));
-        sb.Disc(back + new Vector2(-3, 8), 7, 7, new Color(60, 150, 70));
         sb.Draw(tex, feet, null, Color.White, 0, new Vector2(tex.Width / 2f, tex.Height), new Vector2(sc, sc * (1 + breath)), SpriteEffects.None, 0);
-        var head = feet + new Vector2(0, -h * (1 + breath) + 3);
-        sb.Disc(head + new Vector2(0, 2), 8.5f, 5, new Color(46, 130, 62));
-        sb.Line(head + new Vector2(-3, 1), head + new Vector2(-9, -10 + MathF.Sin(t * 3) * 1.2f), new Color(40, 140, 70), 3);
-        sb.Line(head + new Vector2(-4, 0), head + new Vector2(-8, -7), new Color(120, 200, 110), 1.5f);
     }
 
     // ---------------- Minas Gerais: serras, pedra, fortaleza ----------------
@@ -153,6 +151,9 @@ public static class FactionScene
         sb.Triangle(new Vector2(200, 120), new Vector2(300, 55), new Vector2(380, 120), new Color(128, 124, 120));
         sb.Fill(new Vector2(0, 114), new Vector2(VW, 70), new Color(150, 128, 98));
         for (int x = 0; x < 6; x++) sb.Draw(Assets.Tile(15 + (x & 1)), new Rectangle(x * 60, 128, 61, 61), new Color(210, 200, 190));
+        // cidade colonial: igreja barroca e um ipê-amarelo florido atrás da muralha
+        Scenery.Igreja(sb, new Vector2(298, 124), 0.42f);
+        Scenery.Ipe(sb, new Vector2(206, 126), 0.5f, t, 0);
         // fortaleza: torre de pedra no morro e muralha com telhados cerâmicos
         sb.Disc(new Vector2(156, 122), 44, 14, new Color(120, 110, 96));
         Sprite(sb, Assets.Structure(5), new Vector2(156, 116), 0.55f);
@@ -181,16 +182,12 @@ public static class FactionScene
         var def = Defs.Units[UnitType.GuardiaoDasGerais];
         var tex = Defs.UnitSprite(def, 3);
         float breath = MathF.Sin(t * 1.8f) * 0.02f;
-        float sc = 0.9f * def.Scale;
-        float h = tex.Height * sc;
+        float sc = Defs.SpriteScale(def) * def.Scale;
         // a cada 4 s ele ajusta o escudo (sobe e volta)
         float ph = t % 4f;
         float lift = ph < 0.7f ? MathF.Sin(ph / 0.7f * MathHelper.Pi) * 5 : 0;
         sb.Disc(new Vector2(4, 1), 18, 4, Color.Black * 0.3f);
         sb.Draw(tex, Vector2.Zero, null, Color.White, 0, new Vector2(tex.Width / 2f, tex.Height), new Vector2(sc, sc * (1 + breath)), SpriteEffects.None, 0);
-        var head = new Vector2(0, -h * (1 + breath) + 3);
-        sb.Disc(head + new Vector2(0, 3), 8.5f, 4.5f, new Color(120, 126, 136));
-        sb.Fill(head + new Vector2(-1.5f, -3), new Vector2(3, 5), new Color(200, 70, 50));
         var shield = new Vector2(12, -20 - lift);
         sb.Disc(shield + new Vector2(1, 1), 10, 14, Color.Black * 0.25f);
         sb.Disc(shield, 10, 14, new Color(160, 168, 182));
@@ -217,6 +214,10 @@ public static class FactionScene
         sb.Disc(new Vector2(260, 124), 140, 20, new Color(110, 160, 86));
         sb.Fill(new Vector2(0, 118), new Vector2(VW, 70), new Color(96, 168, 82));
         for (int x = 0; x < 6; x++) sb.Draw(Assets.Tile(57 + (x & 1)), new Rectangle(x * 60, 132, 61, 61), Color.White);
+        // araucárias nas coxilhas
+        Scenery.Araucaria(sb, new Vector2(28, 124), 0.55f, t, 1);
+        Scenery.Araucaria(sb, new Vector2(132, 121), 0.42f, t, 2);
+        Scenery.Araucaria(sb, new Vector2(170, 123), 0.36f, t, 3);
         // galpão
         Sprite(sb, Assets.Structure(19), new Vector2(236, 128), 0.5f);
         // moinho: torre desenhada + pás do pacote girando
@@ -233,6 +234,9 @@ public static class FactionScene
         // bandeira do RS no galpão
         sb.Line(new Vector2(206, 112), new Vector2(206, 74), new Color(80, 55, 30), 2);
         FlagArt.DrawWaving(sb, FactionId.RioGrandeDoSul, new Vector2(207, 75), 30, 20, t, 1f);
+        // gado pastando no campo
+        Scenery.Boi(sb, new Vector2(196, 160), 0.55f, t, 0, -1);
+        Scenery.Boi(sb, new Vector2(262, 166), 0.6f, t, 3, 1);
         // capim balançando com o vento (primeiro plano)
         for (int i = 0; i < 40; i++)
         {
@@ -253,12 +257,8 @@ public static class FactionScene
         sb.Disc(feet + new Vector2(4, 1), 22, 4, Color.Black * 0.3f);
         WorldRenderer.DrawHorse(sb, feet + new Vector2(0, -breathe * 0.3f), 1, 0, Color.White);
         var rider = feet + new Vector2(2, -14 - breathe * 0.5f);
-        float sc = 0.9f * def.Scale;
+        float sc = Defs.SpriteScale(def) * def.Scale;
         sb.Draw(tex, rider, null, Color.White, 0, new Vector2(tex.Width / 2f, tex.Height), sc, SpriteEffects.None, 0);
-        var head = rider + new Vector2(0, -tex.Height * sc + 3);
-        sb.Disc(head + new Vector2(0, 4), 12, 3.2f, new Color(70, 46, 28));
-        sb.Disc(head, 6.5f, 5, new Color(92, 62, 36));
-        sb.Fill(head + new Vector2(-6, 2), new Vector2(12, 1.5f), new Color(170, 40, 40));
         // lança com pequeno movimento e flâmula com a bandeira do RS
         float ang = -0.45f + MathF.Sin(t * 1.3f) * 0.05f;
         var hand = rider + new Vector2(6, -16);

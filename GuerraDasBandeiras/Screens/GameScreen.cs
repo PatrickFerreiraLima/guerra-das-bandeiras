@@ -610,7 +610,7 @@ public class GameScreen : Screen
                     var bb = sbld;
                     cmds.Add(new UiButton
                     {
-                        Icon = Defs.UnitSprite(def, p.ColorSet), Label = def.Name, Cost = def.Cost, Stock = p.Get, Enabled = p.CanPay(def.Cost), Warn = !p.CanPay(def.Cost) ? p.Missing(def.Cost) + "." : p.Pop + def.Pop > p.PopCap ? "População máxima: entra na fila, mas só sai quando houver espaço (construa Casas)." : null,
+                        Icon = Defs.UnitSprite(def, p.ColorSet, p.Faction.Id), Label = def.Name, Cost = def.Cost, Stock = p.Get, Enabled = p.CanPay(def.Cost), Warn = !p.CanPay(def.Cost) ? p.Missing(def.Cost) + "." : p.Pop + def.Pop > p.PopCap ? "População máxima: entra na fila, mas só sai quando houver espaço (construa Casas)." : null,
                         TooltipTitle = $"{def.Name}  ({def.Cost.Long()})", Tooltip = $"{def.Desc}\n{def.Strong}. Vida {def.Hp}, dano {def.Dmg}, {def.Time:0}s de treino.",
                         OnClick = () => Train(bb, tt)
                     });
@@ -623,7 +623,7 @@ public class GameScreen : Screen
                 var def = Defs.Units[sbld.Queue[i]];
                 _buttons.Add(new UiButton
                 {
-                    Rect = new Rectangle(_info.X + 92 + i * 46, _info.Bottom - 50, 42, 42), Icon = Defs.UnitSprite(def, p.ColorSet), Accent = Pal.PanelBg2,
+                    Rect = new Rectangle(_info.X + 92 + i * 46, _info.Bottom - 50, 42, 42), Icon = Defs.UnitSprite(def, p.ColorSet, p.Faction.Id), Accent = Pal.PanelBg2,
                     Progress = i == 0 ? sbld.ProdTimer / def.Time : -1, TooltipTitle = def.Name, Tooltip = "Clique para cancelar e receber os recursos de volta.",
                     OnClick = () => CancelQueue(bb, idx)
                 });
@@ -654,7 +654,7 @@ public class GameScreen : Screen
                 bool ready = best.AbilityReady;
                 cmds.Add(new UiButton
                 {
-                    Icon = Defs.UnitSprite(sd, p.ColorSet), Label = sd.Ability,
+                    Icon = Defs.UnitSprite(sd, p.ColorSet, p.Faction.Id), Label = sd.Ability,
                     Sub = best.AbilityActive ? "ATIVA" : ready ? "pronta" : $"{Math.Ceiling(best.AbilityCooldown)}s",
                     Enabled = ready, Hotkey = Keys.V, Accent = Pal.Gold * 0.9f, Selected = best.AbilityActive,
                     Progress = ready ? -1 : 1 - Math.Max(0, best.AbilityCooldown) / sd.AbilityCd,
@@ -684,7 +684,7 @@ public class GameScreen : Screen
                     int col = i % 9, row = i / 9;
                     _buttons.Add(new UiButton
                     {
-                        Rect = new Rectangle(_info.X + 10 + col * 50, _info.Y + 40 + row * 52, 46, 48), Icon = Defs.UnitSprite(u.Def, p.ColorSet),
+                        Rect = new Rectangle(_info.X + 10 + col * 50, _info.Y + 40 + row * 52, 46, 48), Icon = Defs.UnitSprite(u.Def, p.ColorSet, p.Faction.Id),
                         Accent = Pal.PanelBg2, Progress = u.Hp / u.MaxHp,
                         OnClick = () => { if (Input.Shift) _selection.Remove(uu); else { _selection.Clear(); _selection.Add(uu); } }
                     });
@@ -697,7 +697,7 @@ public class GameScreen : Screen
         var fac = p.Faction;
         _buttons.Add(new UiButton
         {
-            Rect = _power, Icon = Defs.UnitSprite(Defs.Units[UnitType.GuardiaoDasGerais], p.ColorSet), Label = fac.Power,
+            Rect = _power, Icon = Defs.UnitSprite(Defs.Units[UnitType.GuardiaoDasGerais], p.ColorSet, p.Faction.Id), Label = fac.Power,
             Sub = p.PowerActive ? $"ATIVO {Math.Ceiling(p.PowerTime)}s" : p.PowerReady ? "pronto (C)" : $"{Math.Ceiling(p.PowerCd)}s",
             Enabled = p.PowerReady, Hotkey = Keys.C, Accent = Pal.Slate, Selected = p.PowerActive, Hidden = true,
             Progress = p.PowerReady || p.PowerActive ? -1 : 1 - Math.Max(0, p.PowerCd) / fac.PowerCd,
@@ -1084,7 +1084,7 @@ public class GameScreen : Screen
         var portrait = new Rectangle(r.X + 8, r.Y + 22, 44, 48);
         sb.Fill(portrait, f.Color * 0.35f);
         sb.Border(portrait, f.Color, 1);
-        sb.SpriteFit(Defs.UnitSprite(Defs.Units[UnitType.GuardiaoDasGerais], p.ColorSet), portrait, p.PowerReady || p.PowerActive ? Color.White : Color.White * 0.4f, 1.1f);
+        sb.SpriteFit(Defs.UnitSprite(Defs.Units[UnitType.GuardiaoDasGerais], p.ColorSet, p.Faction.Id), portrait, p.PowerReady || p.PowerActive ? Color.White : Color.White * 0.4f, 1.1f);
         var name = Gfx.Wrap(Assets.FontNarrow(12), f.Commander, r.Width - 66);
         for (int i = 0; i < Math.Min(2, name.Count); i++) sb.Text(Assets.FontNarrow(12), name[i], new Vector2(r.X + 58, r.Y + 24 + i * 15), Color.White, false);
 
@@ -1130,7 +1130,7 @@ public class GameScreen : Screen
         {
             case Unit u:
             {
-                sb.SpriteFit(Defs.UnitSprite(u.Def, u.Owner.ColorSet), portrait, Color.White, 1.6f);
+                sb.SpriteFit(Defs.UnitSprite(u.Def, u.Owner.ColorSet, u.Owner.Faction.Id), portrait, Color.White, 1.6f);
                 sb.Text(fBig, u.Def.Name, new Vector2(r.X + 92, r.Y + 8), Color.White);
                 FlagArt.Draw(sb, u.Owner.Faction.Id, new Rectangle(r.X + 92, r.Y + 34, 18, 12));
                 sb.Text(Assets.FontNarrow(13), u.Team == 0 ? $"{u.Owner.Faction.Name} (você)" : $"{u.Owner.Faction.Name} (inimigo)", new Vector2(r.X + 116, r.Y + 32), u.Owner.Color, false);

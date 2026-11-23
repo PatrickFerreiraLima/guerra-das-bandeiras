@@ -5,7 +5,7 @@ namespace GuerraDasBandeiras.Tools;
 
 /// <summary>
 /// Teste automático: "GuerraDasBandeiras --shot saida.png cenario segundos"
-/// cenários: menu, setup, game (IA x IA), mission, end.
+/// cenários: menu, setup, game (IA x IA), mission, end, scenery (mapa revelado; GB_FOCUS=x,y escolhe o tile).
 /// Simula a partida acelerada, salva uma captura e um relatório .txt ao lado.
 /// </summary>
 public class ShotRunner
@@ -66,6 +66,7 @@ public class ShotRunner
                 var fa = Environment.GetEnvironmentVariable("GB_FACTIONS")?.Split(',').Select(int.Parse).ToArray() ?? new[] { 0, 1 };
                 var gs = new GameScreen(new GameConfig { Mode = GameMode.Skirmish, PlayerFaction = (FactionId)fa[0], EnemyFaction = (FactionId)fa[1], Difficulty = 1, Seed = 7 });
                 if (_scenario == "game" || _scenario == "end") gs.AutoPlayer = new AIController(gs.W, 0);
+                if (_scenario == "scenery") gs.W.RevealAll = true;
                 return gs;
         }
     }
@@ -110,6 +111,9 @@ public class ShotRunner
             var focus = gs.W.Units.Where(u => u.IsMilitary).Select(u => u.Pos).DefaultIfEmpty(gs.W.CenterOf(gs.W.StartTiles[0])).ToList();
             var center = new Vector2(focus.Average(p => p.X), focus.Average(p => p.Y));
             if (_scenario == "battle") center = gs.W.Flags[1].Pos;
+            // "scenery": GB_FOCUS=x,y (tile) escolhe o ponto do mapa a enquadrar
+            else if (_scenario == "scenery" && Environment.GetEnvironmentVariable("GB_FOCUS") is string fc)
+            { var p = fc.Split(',').Select(int.Parse).ToArray(); center = gs.W.CenterOf(new Point(p[0], p[1])); }
             else if (_scenario is "mission" or "tutorial" || _seconds < 1) center = gs.W.CenterOf(new Point(gs.W.StartTiles[0].X + 5, gs.W.StartTiles[0].Y - 1));
             gs.FocusOn(center, 1.4f);
             gs.SelectForShot(e => e.Team == 0 && e is Unit u && (_scenario == "battle" ? u.IsMilitary : u.IsWorker));

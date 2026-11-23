@@ -18,6 +18,7 @@ public class World
     public readonly List<FloatText> Texts = new();
     public readonly List<Fx> Effects = new();
     public readonly List<Decor> Decors = new();
+    public readonly List<Scenery.Prop> Props = new();   // paisagem brasileira (só visual)
     public readonly List<Vector2> RoadPoints = new();   // caminhos de terra (apenas visual)
     public readonly List<ControlPoint> Flags = new();
     public readonly Player[] Players = new Player[2];
@@ -538,8 +539,8 @@ public class World
             Sfx.Death(this, u.Pos);
             Effects.Add(new Fx
             {
-                Kind = Fx.Corpse, Pos = u.Pos + new Vector2(0, 8), Life = 3f, MaxLife = 3f, Tex = Defs.UnitSprite(u.Def, u.Owner.ColorSet),
-                Flip = u.FacingLeft, Rot = u.FacingLeft ? -MathHelper.PiOver2 : MathHelper.PiOver2, Scale = 0.9f * u.Def.Scale, Color = Color.White
+                Kind = Fx.Corpse, Pos = u.Pos + new Vector2(0, 8), Life = 3f, MaxLife = 3f, Tex = Defs.UnitSprite(u.Def, u.Owner.ColorSet, u.Owner.Faction.Id),
+                Flip = u.FacingLeft, Rot = u.FacingLeft ? -MathHelper.PiOver2 : MathHelper.PiOver2, Scale = Defs.SpriteScale(u.Def) * u.Def.Scale, Color = Color.White
             });
         }
     }
@@ -661,9 +662,13 @@ public class World
 
     // ---------------- Névoa ----------------
 
+    /// <summary>Só para capturas de teste (cenário "scenery"): mostra o mapa inteiro, sem névoa.</summary>
+    public bool RevealAll;
+
     public void UpdateFog()
     {
         Array.Clear(Visible);
+        if (RevealAll) for (int x = 0; x < W; x++) for (int y = 0; y < H; y++) { Visible[x, y] = true; Explored[x, y] = true; }
         foreach (var u in Units) if (u.Team == 0) Reveal(TileOf(u.Pos), u.SightPx / T);
         foreach (var b in Buildings) if (b.Team == 0) Reveal(TileOf(b.Pos), b.Def.Sight + b.Size / 2f);
     }

@@ -63,6 +63,25 @@ public static class Assets
         return t;
     }
 
+    /// <summary>Imagens de tela (logo etc.) em Assets/Images, sem recorte de margem.</summary>
+    public static Texture2D Image(string name)
+    {
+        var key = "img:" + name;
+        if (_tex.TryGetValue(key, out var t)) return t;
+        var path = Path.Combine(Root, "Images", name + ".png");
+        t = Pixel;
+        if (File.Exists(path))
+        {
+            t = Texture2D.FromFile(_gd, path);
+            var d = new Color[t.Width * t.Height];
+            t.GetData(d);
+            for (int i = 0; i < d.Length; i++) d[i] = Color.FromNonPremultiplied(d[i].R, d[i].G, d[i].B, d[i].A);
+            t.SetData(d);
+        }
+        _tex[key] = t;
+        return t;
+    }
+
     public static Texture2D Unit(int n) => Tex($"Unit/medievalUnit_{n:00}");
     public static Texture2D Structure(int n) => Tex($"Structure/medievalStructure_{n:00}");
     public static Texture2D Env(int n) => Tex($"Environment/medievalEnvironment_{n:00}");
