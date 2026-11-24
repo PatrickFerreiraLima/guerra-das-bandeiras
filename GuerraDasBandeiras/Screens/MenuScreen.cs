@@ -39,12 +39,17 @@ public class MenuScreen : Screen
         });
         _buttons.Add(new UiButton
         {
-            Rect = new Rectangle((int)c.X - w / 2, y + 128, w / 2 - 5, 46), Label = "Como jogar", Accent = Pal.InkSoft, FontSize = 16,
+            Rect = new Rectangle((int)c.X - w / 2, y + 128, w, h), Label = "Jogar 1x1 em rede", Sub = "Crie uma sala ou entre na de outra pessoa (rede local ou IP)", Accent = Pal.Slate,
+            OnClick = () => Game.SetScreen(new MultiplayerScreen())
+        });
+        _buttons.Add(new UiButton
+        {
+            Rect = new Rectangle((int)c.X - w / 2, y + 192, w / 2 - 5, 46), Label = "Como jogar", Accent = Pal.InkSoft, FontSize = 16,
             OnClick = () => _help = true
         });
         _buttons.Add(new UiButton
         {
-            Rect = new Rectangle((int)c.X + 5, y + 128, w / 2 - 5, 46), Label = "Sair", Accent = Pal.InkSoft, FontSize = 16,
+            Rect = new Rectangle((int)c.X + 5, y + 192, w / 2 - 5, 46), Label = "Sair", Accent = Pal.InkSoft, FontSize = 16,
             OnClick = () => Game.Exit()
         });
     }
@@ -145,12 +150,13 @@ public class EndScreen : Screen
     public EndScreen(GameConfig cfg, World w)
     {
         _cfg = cfg; _w = w;
-        _win = w.Winner == 0;
-        WinnerFaction = w.Winner >= 0 ? w.Players[w.Winner].Faction : w.Players[0].Faction;
+        _win = w.Winner == w.Local;
+        WinnerFaction = w.Winner >= 0 ? w.Players[w.Winner].Faction : w.Me.Faction;
         Condition = w.WinReason.Contains("bandeiras") ? "Domínio das duas bandeiras por 90 s"
                   : w.WinReason.Contains("Centro") ? "Destruição do Centro de Comando"
+                  : w.WinReason.Contains("abandono") ? "Abandono do adversário"
                   : w.WinReason.Contains("Missão") || w.WinReason.Contains("Tutorial") ? "Objetivos cumpridos" : "—";
-        var p = w.Players[0]; var e = w.Players[1];
+        var p = w.Me; var e = w.Enemy;
         static string Res3(Player q) => $"{q.Gathered[0]} · {q.Gathered[1]} · {q.Gathered[2]}";
         Rows = new List<StatRow>
         {
@@ -166,6 +172,7 @@ public class EndScreen : Screen
     }
 
     float Top => Math.Max(0, (Ui.Y - 640) / 2f);
+    static string Short(string s) => s.Length > 12 ? s[..12] + "…" : s;
 
     public override void Update(float dt)
     {
@@ -173,6 +180,14 @@ public class EndScreen : Screen
         _buttons.Clear();
         float cx = Ui.X / 2;
         int y = (int)(Top + 570);
+        if (_cfg.Versus)
+        {
+            // partida em rede: a conexão já foi encerrada; volta para o saguão para abrir ou procurar outra sala
+            _buttons.Add(new UiButton { Rect = new Rectangle((int)cx - 220, y, 210, 52), Label = "Nova partida", Hotkey = Keys.Enter, OnClick = () => Game.SetScreen(new MultiplayerScreen()) });
+            _buttons.Add(new UiButton { Rect = new Rectangle((int)cx + 10, y, 210, 52), Label = "Menu", Accent = Pal.InkSoft, Hotkey = Keys.Escape, OnClick = () => Game.SetScreen(new MenuScreen()) });
+            Gui.Handle(_buttons);
+            return;
+        }
         _buttons.Add(new UiButton
         {
             Rect = new Rectangle((int)cx - 330, y, 210, 52), Label = "Jogar de novo", Hotkey = Keys.Enter,
@@ -207,13 +222,13 @@ public class EndScreen : Screen
         sb.TextRight(Assets.FontBold(16), $"Duração {min:00}:{sec:00}", new Vector2(r.Right - 20, r.Y + 14), Color.White);
 
         // tabela: você x inimigo
-        var p = _w.Players[0]; var e = _w.Players[1];
+        var p = _w.Me; var e = _w.Enemy;
         float colYou = r.X + 560, colEnemy = r.X + 750;
         float ty = r.Y + 160;
         FlagArt.Draw(sb, p.Faction.Id, new Rectangle((int)colYou - 50, (int)ty, 24, 16));
-        sb.Text(Assets.FontBold(15), "Você", new Vector2(colYou - 20, ty - 1), Pal.Ink, false);
+        sb.Text(Assets.FontBold(15), _cfg.Versus ? Short(_cfg.Names[_w.Local]) : "Você", new Vector2(colYou - 20, ty - 1), Pal.Ink, false);
         FlagArt.Draw(sb, e.Faction.Id, new Rectangle((int)colEnemy - 50, (int)ty, 24, 16));
-        sb.Text(Assets.FontBold(15), "Inimigo", new Vector2(colEnemy - 20, ty - 1), Pal.Ink, false);
+        sb.Text(Assets.FontBold(15), _cfg.Versus ? Short(_cfg.Names[_w.Foe]) : "Inimigo", new Vector2(colEnemy - 20, ty - 1), Pal.Ink, false);
         ty += 30;
         var lf = Assets.FontNarrow(17);
         var vf = Assets.FontBold(17);

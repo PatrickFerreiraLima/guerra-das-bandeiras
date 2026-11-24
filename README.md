@@ -35,11 +35,27 @@ Atalhos de linha de comando úteis no desenvolvimento:
 | `dotnet run -- --shot img.png game 600` | Teste automático: IA x IA por 600 s simulados, salva captura + relatório `.txt` |
 | `dotnet run -- --shot img.png battle 5` | Captura de uma batalha montada na Bandeira do Sul |
 | `GB_FOCUS=31,19 dotnet run -- --shot img.png scenery 2` | Captura com o mapa revelado, enquadrando o tile informado (bom para revisar cenário) |
-| `dotnet run -- --test resultado.txt` | Roda os 40 testes automáticos (regras, partidas, mouse/teclado simulados, sons, seleção, introdução, tela final, referência de balanceamento) |
+| `dotnet run -- --shot host.png net_host 8` e, em outro terminal, `dotnet run -- --shot conv.png net_join 8` | Dois jogos de verdade: um cria a sala, o outro entra pelo 127.0.0.1; cada um salva sua tela após 8 s de partida em rede |
+| `dotnet run -- --test resultado.txt` | Roda os 48 testes automáticos (regras, partidas, mouse/teclado simulados, sons, seleção, introdução, tela final, referência de balanceamento e rede 1x1: lockstep, reconexão, chat, código da sala) |
 | `dotnet run -- --balance saida 30` | Diagnóstico de balanceamento: 180 partidas IA x IA (3 confrontos x 2 posições x 30 sementes), gera `saida.csv` e `saida.md` |
 | `dotnet run -- --snapshot Assets/Testes/balanco_referencia.txt` | Regrava a referência de balanceamento (só quando mudar os números de propósito) |
 
 Resolução de teste: defina `GB_SIZE=1366x768` antes de rodar.
+
+## Jogar 1x1 em rede (sem servidor)
+
+No menu, **Jogar 1x1 em rede**. Cada um digita o nome (ele vira o nome da sala; nomes repetidos podem) e escolhe a facção (pode ser a mesma). Só precisa do `.exe`: nada para instalar.
+
+- **Criar sala**: você vira o anfitrião. A sala aparece sozinha para quem procurar na mesma rede. Para quem está em outra casa, o jogo tenta abrir a porta do roteador sozinho (UPnP) e mostra um **código da sala** (ex.: `SC07-2B80`) com botão **Copiar código**.
+- **Entrar numa sala**: clique numa sala da lista (mesma rede) ou digite o **código** (ou o IP) e clique em Conectar.
+- **Se o roteador não abrir a porta** (UPnP desligado) a tela avisa: dá para ligar o UPnP no roteador (geralmente em 192.168.1.1), usar Radmin VPN/ZeroTier, ou liberar a porta **TCP 27027** manualmente. Com **CGNAT** (operadora divide o IP) só VPN ou um servidor resolvem — o jogo detecta e avisa.
+- **Chat**: Enter abre, Enter manda, Esc fecha.
+- **Queda de conexão**: a partida congela e o jogo reconecta sozinho por até 60 s (o convidado liga de novo para o anfitrião); ao voltar, as ordens que faltaram são reenviadas e a partida segue de onde parou.
+- Na primeira vez o Windows pergunta se o jogo pode usar a rede: permita em redes privadas.
+- Mesmo objetivo do jogo solo. Não há pausa (o menu abre, mas a partida segue). Sair = desistir: o outro vence por abandono (também se a conexão não voltar em 60 s).
+- Os dois precisam do **mesmo executável** e do mesmo `balance.json` (o jogo confere ao entrar).
+
+Como funciona: as duas máquinas rodam a mesma simulação em passos fixos (*lockstep*, 30 por segundo) e só trocam as ordens dos jogadores, aplicadas com ~133 ms de atraso nos dois lados ao mesmo tempo. A cada segundo comparam um checksum do estado; se divergirem, a partida é encerrada com aviso. Código em `GuerraDasBandeiras/Net/` e `Gameplay/Commands.cs`.
 
 ## Balanceamento sem recompilar
 

@@ -7,7 +7,7 @@ public enum UnitType { Worker, Swordsman, Spearman, Archer, Scout, Ram, VigiaDaM
 public enum BuildingType { Centro, Casa, Coletor, Quartel, Torre, Oficina }
 public enum FactionId { Amazonas, MinasGerais, RioGrandeDoSul }
 public enum Terrain : byte { Grass, Forest, Hill, Water, Ford, Dirt }
-public enum GameMode { Mission, Skirmish, Tutorial }
+public enum GameMode { Mission, Skirmish, Tutorial, Versus }
 
 [Flags]
 public enum Tag { None = 0, Infantry = 1, Ranged = 2, Cavalry = 4, Worker = 8, Heavy = 16, Stealth = 32, Siege = 64 }
@@ -289,5 +289,11 @@ public class GameConfig
     public FactionId EnemyFaction = FactionId.MinasGerais;
     public int Difficulty = 1; // 0 fácil, 1 normal, 2 difícil
     public int Seed = Environment.TickCount;
+    // ---- 1x1 em rede (GameMode.Versus): o anfitrião é o time 0, quem entra na sala é o time 1 ----
+    /// <summary>Time controlado nesta máquina (0 fora do modo em rede).</summary>
+    public int LocalTeam;
+    /// <summary>Nome de cada time (anfitrião, convidado) mostrado na partida em rede.</summary>
+    public string[] Names = { "Você", "Inimigo" };
+    public bool Versus => Mode == GameMode.Versus;
     public static readonly string[] DifficultyNames = { "Fácil", "Normal", "Difícil" };
 }

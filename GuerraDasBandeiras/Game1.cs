@@ -39,6 +39,7 @@ public class Game1 : Game
         Window.AllowUserResizing = true;
         Window.Title = "Brasil: Guerra das Bandeiras";
         Window.ClientSizeChanged += OnResize;
+        Window.TextInput += (_, e) => Input.OnText(e.Character);
     }
 
     protected override void Initialize()
@@ -125,7 +126,7 @@ public class Game1 : Game
     {
         float dt = (float)gameTime.ElapsedGameTime.TotalSeconds;
         Input.Update(IsActive);
-        if (_next != null) { _screen = _next; _next = null; }
+        if (_next != null) { _screen = _next; _next = null; Input.TextCapture = false; }
 
         if (Input.KeyPressed(Keys.F11))
         {

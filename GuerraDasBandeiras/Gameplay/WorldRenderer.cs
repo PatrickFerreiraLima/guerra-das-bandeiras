@@ -119,7 +119,7 @@ public class WorldRenderer
 
         if (hover != null && !hover.Dead && !selection.Contains(hover))
         {
-            var hc = (hover.Team == 0 ? Pal.GreenLight : hover.Team < 0 ? Pal.Gold : Pal.Red) * 0.7f;
+            var hc = (hover.Team == _w.Local ? Pal.GreenLight : hover.Team < 0 ? Pal.Gold : Pal.Red) * 0.7f;
             if (hover is Unit hu) sb.Ellipse(hu.Pos + new Vector2(0, 8), 17 * hu.Def.Scale, 8.5f * hu.Def.Scale, hc);
             else if (hover is ResourceNode hn) sb.Ellipse(hn.Pos + new Vector2(0, 16), 28, 12, hc);
             else if (hover is Building hb) { var r = hb.WorldRect; sb.Ellipse(new Vector2(r.X + r.W / 2, r.Bottom - 10), r.W * 0.55f, 22, hc); }
@@ -130,7 +130,7 @@ public class WorldRenderer
         foreach (var e in selection)
         {
             if (e.Dead) continue;
-            var col = e.Team == 0 ? Pal.GreenLight : e.Team < 0 ? Pal.Gold : Pal.Red;
+            var col = e.Team == _w.Local ? Pal.GreenLight : e.Team < 0 ? Pal.Gold : Pal.Red;
             if (e is Unit u) sb.Ellipse(u.Pos + new Vector2(0, 8), 18 * u.Def.Scale * pulse, 9 * u.Def.Scale * pulse, col);
             else if (e is Building b)
             {
@@ -143,11 +143,11 @@ public class WorldRenderer
         // sombras e marcadores de time (aliado = elipse, inimigo = losango: não depende só da cor)
         foreach (var u in _w.Units)
         {
-            if (!view.Intersects(u.Pos.X - 30, u.Pos.Y - 50, 60, 70) || !_w.CanSee(0, u)) continue;
+            if (!view.Intersects(u.Pos.X - 30, u.Pos.Y - 50, 60, 70) || !_w.CanSee(_w.Local, u)) continue;
             var feet = u.Pos + new Vector2(0, 9);
             float s = u.Def.Scale * (u.Def.IsSiege ? 1.5f : 1f);
             sb.Disc(feet, 13 * s, 5.5f * s, Color.Black * 0.28f);
-            if (u.Team == 0) sb.Ellipse(feet, 12 * s, 5.5f * s, u.Owner.Color * 0.8f);
+            if (u.Team == _w.Local) sb.Ellipse(feet, 12 * s, 5.5f * s, u.Owner.Color * 0.8f);
             else Diamond(sb, feet, 14 * s, 7 * s, u.Owner.Color * 0.9f);
             if (u.AbilityActive) sb.Ellipse(feet, (16 + MathF.Sin(time * 10) * 2) * s, 8 * s, Pal.Gold);
         }
@@ -158,9 +158,9 @@ public class WorldRenderer
         foreach (var r in _w.Resources)
             if (view.Intersects(r.Pos.X - 64, r.Pos.Y - 100, 128, 140) && _w.IsExplored(r)) _sorted.Add((r.SortY, r));
         foreach (var b in _w.Buildings)
-            if (view.Intersects(b.WorldRect.X - 20, b.WorldRect.Y - 120, b.WorldRect.W + 40, b.WorldRect.H + 140) && (b.Team == 0 || _w.IsExplored(b))) _sorted.Add((b.SortY, b));
+            if (view.Intersects(b.WorldRect.X - 20, b.WorldRect.Y - 120, b.WorldRect.W + 40, b.WorldRect.H + 140) && (b.Team == _w.Local || _w.IsExplored(b))) _sorted.Add((b.SortY, b));
         foreach (var u in _w.Units)
-            if (view.Intersects(u.Pos.X - 40, u.Pos.Y - 60, 80, 80) && (u.Team == 0 || _w.CanSee(0, u))) _sorted.Add((u.SortY, u));
+            if (view.Intersects(u.Pos.X - 40, u.Pos.Y - 60, 80, 80) && (u.Team == _w.Local || _w.CanSee(_w.Local, u))) _sorted.Add((u.SortY, u));
         _sorted.Sort((a, b) => a.y.CompareTo(b.y));
 
         sb.Begin(transformMatrix: cam.Transform, samplerState: SamplerState.LinearClamp);
@@ -263,11 +263,11 @@ public class WorldRenderer
         foreach (var (_, e) in _sorted)
         {
             bool sel = selection.Contains(e);
-            if (e is Unit u && _w.CanSee(0, u))
+            if (e is Unit u && _w.CanSee(_w.Local, u))
             {
                 float top = -44 * u.Def.Scale - (IsMounted(u) ? 10 : 0);
                 if (sel || u.Hp < u.MaxHp)
-                    sb.BarF(u.Pos + new Vector2(-14, top), new Vector2(28, 4), u.Hp / u.MaxHp, u.Team == 0 ? Pal.GreenLight : Pal.Red, Color.Black * 0.6f);
+                    sb.BarF(u.Pos + new Vector2(-14, top), new Vector2(28, 4), u.Hp / u.MaxHp, u.Team == _w.Local ? Pal.GreenLight : Pal.Red, Color.Black * 0.6f);
                 // indicador de habilidade ativa: barra dourada com o tempo restante + ícone
                 if (u.AbilityActive || u.CamoTime > 0)
                 {
@@ -286,16 +286,16 @@ public class WorldRenderer
                         sb.Disc(u.Pos + new Vector2(MathF.Cos(a) * 10, top - 6 + MathF.Sin(a) * 3), 2.5f, 2.5f, Pal.Gold);
                     }
                 // habilidade pronta: pequena estrela dourada para unidades especiais do jogador
-                if (u.Team == 0 && u.HasAbility && u.AbilityReady)
+                if (u.Team == _w.Local && u.HasAbility && u.AbilityReady)
                     sb.Disc(u.Pos + new Vector2(18, top + 2), 3.5f, 3.5f, Pal.Gold * (0.7f + 0.3f * MathF.Sin(time * 5)));
             }
-            else if (e is Building b && (sel || b.Hp < b.MaxHp || !b.Done) && (b.Team == 0 || _w.CanSee(0, b)))
+            else if (e is Building b && (sel || b.Hp < b.MaxHp || !b.Done) && (b.Team == _w.Local || _w.CanSee(_w.Local, b)))
             {
                 var r = b.WorldRect;
                 float top = r.Y - 10;
-                sb.BarF(new Vector2(r.X + 12, top), new Vector2(r.W - 24, 6), b.Hp / b.MaxHp, b.Team == 0 ? Pal.GreenLight : Pal.Red, Color.Black * 0.6f);
+                sb.BarF(new Vector2(r.X + 12, top), new Vector2(r.W - 24, 6), b.Hp / b.MaxHp, b.Team == _w.Local ? Pal.GreenLight : Pal.Red, Color.Black * 0.6f);
                 if (!b.Done) sb.BarF(new Vector2(r.X + 12, top + 9), new Vector2(r.W - 24, 4), b.Progress, Pal.Gold, Color.Black * 0.6f);
-                else if (b.Queue.Count > 0 && b.Team == 0) sb.BarF(new Vector2(r.X + 12, top + 9), new Vector2(r.W - 24, 4), b.ProdTimer / Defs.Units[b.Queue[0]].Time, Color.White, Color.Black * 0.6f);
+                else if (b.Queue.Count > 0 && b.Team == _w.Local) sb.BarF(new Vector2(r.X + 12, top + 9), new Vector2(r.W - 24, 4), b.ProdTimer / Defs.Units[b.Queue[0]].Time, Color.White, Color.Black * 0.6f);
             }
         }
         foreach (var f in _w.Flags)
@@ -477,7 +477,7 @@ public class WorldRenderer
         sb.Disc(new Vector2(feet.X, r.Bottom - 8) + ShadowOff * 1.5f, r.W * 0.52f, 16, Color.Black * 0.24f);
         Color tint = Color.White;
         if (b.HitFlash > 0) tint = Color.Lerp(tint, Color.Red, 0.4f);
-        if (b.Team != 0 && !_w.CanSee(0, b)) tint = Color.Lerp(tint, Color.Gray, 0.4f);
+        if (b.Team != _w.Local && !_w.CanSee(_w.Local, b)) tint = Color.Lerp(tint, Color.Gray, 0.4f);
         float sw = tex.Width * scale, sh = tex.Height * scale;
 
         if (b.Done) DrawFactionBase(sb, b, fac, feet, sw, lift);
@@ -617,7 +617,7 @@ public class WorldRenderer
 
         var tex = Defs.UnitSprite(u.Def, u.Owner.ColorSet, u.Owner.Faction.Id);
         float scale = Defs.SpriteScale(u.Def) * u.Def.Scale;
-        bool camoOwn = u.Team == 0 && (u.CamoTime > 0 || (u.Def.Tags.HasFlag(Tag.Stealth) && u.RevealTimer <= 0 && u.InForest));
+        bool camoOwn = u.Team == _w.Local && (u.CamoTime > 0 || (u.Def.Tags.HasFlag(Tag.Stealth) && u.RevealTimer <= 0 && u.InForest));
         // Camuflagem: some aos poucos (0,6 s) até ficar translúcido; furtivos na mata ficam meio apagados
         float camoAlpha = 1f;
         if (u.CamoTime > 0) { float ramp = Math.Min(1f, (u.Def.AbilityDur - u.CamoTime) / 0.6f); camoAlpha = MathHelper.Lerp(1f, 0.38f, Math.Clamp(ramp, 0, 1)); }
@@ -698,7 +698,7 @@ public class WorldRenderer
             }
             sb.Disc(sc, 2.5f, 2.5f, u.Owner.Color);
         }
-        if (u.Cargo > 0 && u.Team == 0)
+        if (u.Cargo > 0 && u.Team == _w.Local)
             sb.SpriteFeet(Defs.ResIcon(u.CargoKind), u.Pos + new Vector2(u.FacingLeft ? 10 : -10, -22), 0.35f, Color.White);
     }
 

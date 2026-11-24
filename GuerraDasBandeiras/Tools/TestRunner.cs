@@ -8,7 +8,7 @@ namespace GuerraDasBandeiras.Tools;
 /// Testes automáticos de regras: "GuerraDasBandeiras --test resultado.txt".
 /// Cada teste monta uma situação no mundo real do jogo, simula e confere o resultado.
 /// </summary>
-public static class TestRunner
+public static partial class TestRunner
 {
     record Result(string Name, bool Pass, string Detail);
     static readonly List<Result> _results = new();
@@ -59,6 +59,14 @@ public static class TestRunner
             ("Tela de vitória/derrota com estatísticas corretas", EndScreenStats),
             ("Balanceamento inalterado (comparado à referência)", BalanceUnchanged),
             ("Limitador de sons repetidos", SoundLimiter),
+            ("Rede: lockstep entre 2 jogos via TCP mantém os mundos idênticos", NetLockstepSync),
+            ("Rede: ninguém dá ordens às unidades do adversário", NetOwnership),
+            ("Rede: adversário que sai = vitória por abandono", NetOpponentLeaves),
+            ("Rede: sala anunciada na rede local e conexão aceita", NetRoomDiscovery),
+            ("Rede: guest (time 1) vê o mundo do seu lado (névoa, câmera, HUD)", NetGuestPerspective),
+            ("Rede: conexão cai no meio da partida, volta sozinha e o jogo segue igual (+ chat)", NetReconnect),
+            ("Rede: código da sala (IP + porta) vai e volta sem erro", NetRoomCode),
+            ("Rede: duas salas com o mesmo nome aparecem separadas", NetDuplicateNames),
         };
         foreach (var (name, fn) in tests)
         {

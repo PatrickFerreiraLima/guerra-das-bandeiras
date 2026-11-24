@@ -9,7 +9,17 @@ public class World
     public readonly Terrain[,] Ter;
     public readonly byte[,] TileVar;
     public readonly Entity[,] Occ;
-    public readonly bool[,] Visible, Explored;   // visão do jogador humano (time 0)
+    public readonly bool[,] Visible, Explored;   // visão de quem joga nesta máquina (time Local)
+    /// <summary>Visão de cada time. Fora do modo em rede só a do time 0 é calculada (a IA enxerga o mapa).</summary>
+    public readonly bool[][,] TeamVisible = new bool[2][,], TeamExplored = new bool[2][,];
+
+    /// <summary>Time controlado nesta máquina: 0 no jogo solo; na rede, 0 = anfitrião e 1 = convidado.</summary>
+    public readonly int Local;
+    public int Foe => 1 - Local;
+    public Player Me => Players[Local];
+    public Player Enemy => Players[1 - Local];
+    /// <summary>Partida 1x1 em rede: simulação simétrica (os dois times têm névoa) e determinística.</summary>
+    public readonly bool Versus;
 
     public readonly List<Unit> Units = new();
     public readonly List<Building> Buildings = new();
@@ -58,16 +68,23 @@ public class World
         Ter = new Terrain[W, H];
         TileVar = new byte[W, H];
         Occ = new Entity[W, H];
-        Visible = new bool[W, H];
-        Explored = new bool[W, H];
+        Local = cfg.Versus ? cfg.LocalTeam : 0;
+        Versus = cfg.Versus;
+        for (int t = 0; t < 2; t++) { TeamVisible[t] = new bool[W, H]; TeamExplored[t] = new bool[W, H]; }
+        Visible = TeamVisible[Local];
+        Explored = TeamExplored[Local];
         Pathing = new Pathing(this);
 
         var pf = Defs.Faction(cfg.PlayerFaction);
         var ef = Defs.Faction(cfg.EnemyFaction);
         Players[0] = new Player { Id = 0, Faction = pf, ColorSet = pf.ColorSet };
-        Players[1] = new Player { Id = 1, Faction = ef, ColorSet = ef.ColorSet == pf.ColorSet ? 0 : ef.ColorSet, IsAI = true };
-        Players[1].GatherMult = cfg.Difficulty switch { 0 => 0.75f, 2 => 1.25f, _ => 1f };
-        Players[1].ProdMult = cfg.Difficulty switch { 0 => 0.85f, 2 => 1.15f, _ => 1f };
+        Players[1] = new Player { Id = 1, Faction = ef, ColorSet = ef.ColorSet == pf.ColorSet ? 0 : ef.ColorSet, IsAI = !cfg.Versus };
+        if (!cfg.Versus)
+        {
+            // dificuldade só existe contra a IA; entre pessoas os dois lados são iguais
+            Players[1].GatherMult = cfg.Difficulty switch { 0 => 0.75f, 2 => 1.25f, _ => 1f };
+            Players[1].ProdMult = cfg.Difficulty switch { 0 => 0.85f, 2 => 1.15f, _ => 1f };
+        }
         foreach (var p in Players) { p.Food = 150; p.Wood = 60; p.Ore = 40; p.PowerCd = Balance.C.FirstPowerDelay; }
 
         MapGen.Build(this);
@@ -133,7 +150,7 @@ public class World
             {
                 var p = new Point(tl.X + x, tl.Y + y);
                 if (!InBounds(p) || p.X == 0 || p.Y == 0 || p.X == W - 1 || p.Y == H - 1) return "Fora do mapa";
-                if (team == 0 && !Explored[p.X, p.Y]) return "Área não explorada";
+                if ((team == 0 || Versus) && !TeamExplored[team][p.X, p.Y]) return "Área não explorada";
                 var t = Ter[p.X, p.Y];
                 if (t == Terrain.Water || t == Terrain.Ford) return "Não dá para construir na água";
                 if (t == Terrain.Forest) return "A mata é densa demais aqui";
@@ -212,7 +229,7 @@ public class World
                 foreach (var u in Units) if (u.Team == team && u.IsMilitary) AddRing(u.Pos, Pal.Gold);
                 break;
         }
-        Notify?.Invoke(team == 0 ? $"{f.Commander}: {f.Power}!" : $"Comandante inimigo usou {f.Power}!", team == 0 ? Pal.Gold : Pal.Red);
+        Notify?.Invoke(team == Local ? $"{f.Commander}: {f.Power}!" : $"Comandante inimigo usou {f.Power}!", team == Local ? Pal.Gold : Pal.Red);
         Sfx.Power();
         return true;
     }
@@ -435,8 +452,8 @@ public class World
                 f.Owner = team;
                 if (Players[team].FirstFlagTime < 0) Players[team].FirstFlagTime = Time;
                 Players[team].FlagsCaptured++;
-                Notify?.Invoke(team == 0 ? $"Você capturou a {f.Name}! Bônus: {f.BonusText}" : $"O inimigo capturou a {f.Name} ({f.BonusText} para ele).", team == 0 ? Pal.GreenLight : Pal.Red);
-                if (team == 0) Sfx.FlagCaptured(); else Sfx.FlagLost();
+                Notify?.Invoke(team == Local ? $"Você capturou a {f.Name}! Bônus: {f.BonusText}" : $"O inimigo capturou a {f.Name} ({f.BonusText} para ele).", team == Local ? Pal.GreenLight : Pal.Red);
+                if (team == Local) Sfx.FlagCaptured(); else Sfx.FlagLost();
                 AddDust(f.Pos, 2, Players[team].Color);
                 AddRing(f.Pos, Players[team].Color, ControlPoint.Radius);
             }
@@ -463,13 +480,13 @@ public class World
             if (!Buildings.Any(b => b.Team == t && b.Def.Type == BuildingType.Centro))
             {
                 Winner = 1 - t;
-                WinReason = t == 1 ? "O Centro de Comando inimigo foi destruído." : "Seu Centro de Comando foi destruído.";
+                WinReason = t != Local ? "O Centro de Comando inimigo foi destruído." : "Seu Centro de Comando foi destruído.";
                 return;
             }
             if (HoldToWin && HoldTimer[t] >= HoldGoal)
             {
                 Winner = t;
-                WinReason = t == 0 ? "Você dominou as duas bandeiras por 90 segundos." : "O inimigo dominou as duas bandeiras por 90 segundos.";
+                WinReason = t == Local ? "Você dominou as duas bandeiras por 90 segundos." : "O inimigo dominou as duas bandeiras por 90 segundos.";
                 return;
             }
         }
@@ -572,16 +589,17 @@ public class World
     {
         if (e.Team == team) return true;
         if (e is Unit u && IsHiddenFrom(u, team)) return false;
-        if (team != 0) return true; // a IA enxerga o mapa (exceto unidades camufladas)
+        if (!Versus && team != 0) return true; // a IA enxerga o mapa (exceto unidades camufladas)
+        var vis = TeamVisible[team];
         if (e is Building b)
         {
             for (int x = 0; x < b.Size; x++)
                 for (int y = 0; y < b.Size; y++)
-                    if (Visible[b.Tile.X + x, b.Tile.Y + y]) return true;
+                    if (vis[b.Tile.X + x, b.Tile.Y + y]) return true;
             return false;
         }
         var t = TileOf(e.Pos);
-        return InBounds(t) && Visible[t.X, t.Y];
+        return InBounds(t) && vis[t.X, t.Y];
     }
 
     public bool IsExplored(Entity e)
@@ -667,13 +685,20 @@ public class World
 
     public void UpdateFog()
     {
-        Array.Clear(Visible);
+        // no jogo solo só o time 0 tem névoa; na rede os dois times têm (e isso entra na simulação)
+        int teams = Versus ? 2 : 1;
+        for (int t = 0; t < teams; t++)
+        {
+            var vis = TeamVisible[t];
+            var exp = TeamExplored[t];
+            Array.Clear(vis);
+            foreach (var u in Units) if (u.Team == t) Reveal(vis, exp, TileOf(u.Pos), u.SightPx / T);
+            foreach (var b in Buildings) if (b.Team == t) Reveal(vis, exp, TileOf(b.Pos), b.Def.Sight + b.Size / 2f);
+        }
         if (RevealAll) for (int x = 0; x < W; x++) for (int y = 0; y < H; y++) { Visible[x, y] = true; Explored[x, y] = true; }
-        foreach (var u in Units) if (u.Team == 0) Reveal(TileOf(u.Pos), u.SightPx / T);
-        foreach (var b in Buildings) if (b.Team == 0) Reveal(TileOf(b.Pos), b.Def.Sight + b.Size / 2f);
     }
 
-    void Reveal(Point c, float r)
+    void Reveal(bool[,] vis, bool[,] exp, Point c, float r)
     {
         int ri = (int)MathF.Ceiling(r);
         float r2 = r * r + r;
@@ -683,9 +708,41 @@ public class World
                 if (dx * dx + dy * dy > r2) continue;
                 int x = c.X + dx, y = c.Y + dy;
                 if (x < 0 || y < 0 || x >= W || y >= H) continue;
-                Visible[x, y] = true;
-                Explored[x, y] = true;
+                vis[x, y] = true;
+                exp[x, y] = true;
             }
+    }
+
+    // ---------------- Rede ----------------
+
+    /// <summary>Procura uma entidade viva pelo Id (as ordens em rede referenciam unidades e prédios por Id).</summary>
+    public Entity Find(int id)
+    {
+        if (id <= 0) return null;
+        foreach (var u in Units) if (u.Id == id) return u.Dead ? null : u;
+        foreach (var b in Buildings) if (b.Id == id) return b.Dead ? null : b;
+        foreach (var r in Resources) if (r.Id == id) return r.Dead ? null : r;
+        return null;
+    }
+
+    /// <summary>
+    /// Impressão digital do estado da simulação (posições, vida, ordens, recursos, bandeiras).
+    /// As duas máquinas comparam este número de tempos em tempos para detectar dessincronização.
+    /// Efeitos visuais ficam de fora: eles podem variar de uma máquina para a outra sem problema.
+    /// </summary>
+    public uint Checksum()
+    {
+        uint h = 2166136261;
+        void Mix(int v) { unchecked { h = (h ^ (uint)v) * 16777619; } }
+        void MixF(float v) => Mix(BitConverter.SingleToInt32Bits(v));
+        Mix(Units.Count); Mix(Buildings.Count); Mix(Resources.Count);
+        foreach (var u in Units) { Mix(u.Id); Mix(u.Team); MixF(u.Pos.X); MixF(u.Pos.Y); MixF(u.Hp); Mix((int)u.Order); Mix(u.Cargo); }
+        foreach (var b in Buildings) { Mix(b.Id); MixF(b.Hp); MixF(b.Progress); Mix(b.Queue.Count); MixF(b.ProdTimer); }
+        foreach (var r in Resources) { Mix(r.Id); Mix(r.Amount); }
+        foreach (var p in Players) { Mix(p.Food); Mix(p.Wood); Mix(p.Ore); MixF(p.PowerCd); }
+        foreach (var f in Flags) { Mix(f.Owner); MixF(f.Progress); }
+        MixF(HoldTimer[0]); MixF(HoldTimer[1]); MixF(Time);
+        return h;
     }
 
     // ---------------- Efeitos ----------------

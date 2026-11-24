@@ -30,6 +30,9 @@ public class ShotRunner
         switch (_scenario)
         {
             case "menu": return new MenuScreen();
+            case "lobby": return new MultiplayerScreen();
+            case "net_host": { var ms = new MultiplayerScreen(); ms.AutoHost(FactionId.MinasGerais, "Anfitriã"); return ms; }
+            case "net_join": return new MultiplayerScreen();
             case "setup_am": case "setup_mg": case "setup_rs":
             {
                 var ss = new SetupScreen(GameMode.Skirmish);
@@ -74,6 +77,7 @@ public class ShotRunner
     /// <summary>Retorna true quando a captura deve ser feita neste frame.</summary>
     public void BeforeDraw(Screen s)
     {
+        if (_scenario is "lobby" or "net_host" or "net_join") { NetBeforeDraw(s); return; }
         _frame++;
         // telas de menu: deixa as animações andarem um pouco antes da captura
         if (_frame == 2 && s is not GameScreen) for (int i = 0; i < 40; i++) s.Update(1 / 30f);
@@ -120,7 +124,32 @@ public class ShotRunner
         }
     }
 
-    public bool ShouldCapture => _frame >= 4;
+    public bool ShouldCapture => _scenario is "lobby" or "net_host" or "net_join" ? _netReady : _frame >= 4;
+
+    bool _netReady, _said;
+
+    /// <summary>
+    /// Cenários de rede com dois processos do jogo: "net_host" abre uma sala (Minas Gerais) e "net_join" entra nela
+    /// (Rio Grande do Sul) pelo 127.0.0.1. A captura sai quando a partida em rede já rodou N segundos
+    /// (ou ao fim de 60 s, mostrando o que estiver na tela). "lobby" captura o saguão depois de 2 s.
+    /// </summary>
+    void NetBeforeDraw(Screen s)
+    {
+        _frame++;
+        if (_scenario == "lobby") { _netReady = _frame > 150; return; }
+        // net_host com 999 s: captura o saguão com a sala aberta (status do roteador incluso) depois de ~7 s
+        if (_scenario == "net_host" && _seconds >= 999 && s is MultiplayerScreen) { _netReady = _frame > 420; return; }
+        if (s is MultiplayerScreen ms && _scenario == "net_join" && _frame % 90 == 30 && !ms.IsBusy)
+            ms.AutoJoin(FactionId.RioGrandeDoSul, "Convidado", Environment.GetEnvironmentVariable("GB_JOIN") ?? "127.0.0.1", Net.NetProto.GamePort);
+        if (s is GameScreen g)
+        {
+            if (g.IntroActive) g.SkipIntro();
+            // o convidado cumprimenta pelo chat: a captura do anfitrião mostra a mensagem chegando
+            if (_scenario == "net_join" && !_said && g.Net != null && g.Net.Tick > 60) { _said = true; g.SayInChat("oi! boa partida"); }
+            if (g.Net != null && g.Net.Tick >= _seconds * 30) _netReady = true;
+        }
+        if (_frame > 60 * 60) _netReady = true;
+    }
 
     public void Capture(GraphicsDevice gd, Action<SpriteBatch> draw, SpriteBatch sb)
     {

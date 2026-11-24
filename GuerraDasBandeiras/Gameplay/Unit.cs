@@ -357,7 +357,7 @@ public class Unit : Entity
                 GatherNode.Amount--;
                 GatherNode.Shake = 0.25f;
                 World.AddChips(Vector2.Lerp(Pos, GatherNode.Pos, 0.6f) + new Vector2(0, -8), GatherNode.Kind);
-                if (Team == 0 && World.FxRng.NextDouble() < 0.35)
+                if (Team == World.Local && World.FxRng.NextDouble() < 0.35)
                     Sfx.Gather(World, Pos, GatherNode.Kind);
                 if (GatherNode.Amount <= 0) World.Deplete(GatherNode);
             }
@@ -383,8 +383,8 @@ public class Unit : Entity
         if (Approach(drop, 10f, dt))
         {
             Owner.Add(CargoKind, Cargo);
-            if (Team == 0) World.AddText(Pos + new Vector2(0, -40), $"+{Cargo}", Defs.ResColor(CargoKind));
-            if (Team == 0) Sfx.Deposit(World, Pos);
+            if (Team == World.Local) World.AddText(Pos + new Vector2(0, -40), $"+{Cargo}", Defs.ResColor(CargoKind));
+            if (Team == World.Local) Sfx.Deposit(World, Pos);
             Cargo = 0;
             ResumeGather();
         }
@@ -429,7 +429,7 @@ public class Unit : Entity
                     if (_repairCostTimer >= 1.5f)
                     {
                         _repairCostTimer = 0;
-                        if (Owner.Wood <= 0) { CmdStop(); if (Team == 0) World.Notify?.Invoke("Sem madeira para reparar.", Pal.Red); return; }
+                        if (Owner.Wood <= 0) { CmdStop(); if (Team == World.Local) World.Notify?.Invoke("Sem madeira para reparar.", Pal.Red); return; }
                         Owner.Wood--;
                     }
                 }
@@ -441,7 +441,7 @@ public class Unit : Entity
                 _gatherTimer = 0;
                 AttackAnim = 1f;
                 World.AddChips(Vector2.Lerp(Pos, b.Pos, 0.4f) + new Vector2(0, -10), Res.Wood);
-                if (Team == 0) Sfx.Hammer(World, Pos);
+                if (Team == World.Local) Sfx.Hammer(World, Pos);
             }
         }
     }
@@ -471,7 +471,7 @@ public class Unit : Entity
             if (_stuckCount >= 3)
             {
                 CmdStop();
-                if (Team == 0) World.Notify?.Invoke("Uma unidade ficou bloqueada no caminho e parou.", Pal.Gold);
+                if (Team == World.Local) World.Notify?.Invoke("Uma unidade ficou bloqueada no caminho e parou.", Pal.Gold);
                 return;
             }
             var keep = _moveDest; var o = Order; var amd = AttackMoveDest;

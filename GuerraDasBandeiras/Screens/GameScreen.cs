@@ -1,5 +1,6 @@
 using GuerraDasBandeiras.Core;
 using GuerraDasBandeiras.Gameplay;
+using GuerraDasBandeiras.Net;
 
 namespace GuerraDasBandeiras.Screens;
 
@@ -9,9 +10,15 @@ public class GameScreen : Screen
     public readonly World W;
     readonly WorldRenderer _renderer;
     readonly Camera _cam = new();
+    /// <summary>IA do time 1 (não existe na partida em rede).</summary>
     readonly AIController _ai;
     /// <summary>Modo de teste: uma IA também joga pelo time 0.</summary>
     public AIController AutoPlayer;
+    /// <summary>Partida em rede (1x1): simulação em lockstep com o outro jogador. Nulo no jogo solo.</summary>
+    readonly Lockstep _net;
+    public Lockstep Net => _net;
+    /// <summary>Erro que encerra a partida em rede (ex.: dessincronização).</summary>
+    string _netError;
 
     /// <summary>Avança a simulação rapidamente (usado nos testes automáticos).</summary>
     public void Simulate(float seconds)
@@ -20,7 +27,7 @@ public class GameScreen : Screen
         for (float t = 0; t < seconds && W.Winner < 0; t += step)
         {
             W.Update(step);
-            _ai.Update(step);
+            _ai?.Update(step);
             AutoPlayer?.Update(step);
             _mission?.Update(step);
             _tutorial?.Update(step, SelUnits.Count(u => u.IsWorker));
@@ -62,12 +69,13 @@ public class GameScreen : Screen
 
     Rectangle _top, _bottom, _mini, _info, _cmd, _obj, _power;
 
-    public GameScreen(GameConfig cfg)
+    public GameScreen(GameConfig cfg, NetPeer peer = null, NetLink link = null)
     {
         _cfg = cfg;
         W = new World(cfg);
         _renderer = new WorldRenderer(W);
-        _ai = new AIController(W, 1) { Passive = cfg.Mode != GameMode.Skirmish };
+        if (cfg.Versus && peer != null) _net = new Lockstep(W, peer, W.Local, link);
+        else _ai = new AIController(W, 1) { Passive = cfg.Mode != GameMode.Skirmish };
         if (cfg.Mode == GameMode.Tutorial)
         {
             TutorialRef = new Tutorial(W);
@@ -85,19 +93,25 @@ public class GameScreen : Screen
         W.Damaged = OnDamaged;
         W.BuildingCompleted = b =>
         {
-            if (b.Team != 0) return;
+            if (b.Team != W.Local) return;
             Notify($"{b.Def.Name} pronto(a)!", Pal.GreenLight);
             Sfx.BuildingDone();
         };
-        W.UnitTrained = u => { if (u.Team == 0) Sfx.UnitReady(); };
+        W.UnitTrained = u => { if (u.Team == W.Local) Sfx.UnitReady(); };
 
         _cam.Zoom = 1.1f;
         _cam.ViewW = Game.W; _cam.ViewH = Game.H;
-        _cam.CenterOn(W.CenterOf(new Point(W.StartTiles[0].X + 4, W.StartTiles[0].Y + 1)));
+        // câmera na própria base, puxada para o lado do rio (base oeste: para a direita; base leste: para a esquerda)
+        var home = W.StartTiles[W.Local];
+        _cam.CenterOn(W.CenterOf(new Point(home.X + (home.X < W.W / 2 ? 4 : -2), home.Y + 1)));
         BuildMinimapTextures();
 
-        Notify(cfg.Mode == GameMode.Tutorial ? "Tutorial: 6 passos rápidos. Siga o destaque dourado." : cfg.Mode == GameMode.Mission ? "Missão: A primeira bandeira" : $"{W.Players[0].Faction.Name} x {W.Players[1].Faction.Name} — boa sorte!", Pal.Gold);
+        Notify(cfg.Mode == GameMode.Tutorial ? "Tutorial: 6 passos rápidos. Siga o destaque dourado."
+            : cfg.Mode == GameMode.Mission ? "Missão: A primeira bandeira"
+            : cfg.Versus ? $"{cfg.Names[W.Local]} ({W.Me.Faction.Name}) x {cfg.Names[W.Foe]} ({W.Enemy.Faction.Name}) — boa sorte!"
+            : $"{W.Me.Faction.Name} x {W.Enemy.Faction.Name} — boa sorte!", Pal.Gold);
         Notify("F1 mostra os controles a qualquer momento.", Color.White);
+        if (_net != null) Notify("Enter abre o chat com o adversário.", Color.White);
     }
 
     /// <summary>Avisos discretos: no máximo 4, somem sozinhos, sem repetir a mesma frase em sequência.</summary>
@@ -111,9 +125,133 @@ public class GameScreen : Screen
     float _capitalAlertCd, _capitalFlash, _popWarnCd;
     string Clock => $"{(int)(W.Time / 60):00}:{(int)(W.Time % 60):00}";
 
+    /// <summary>
+    /// Toda ordem do jogador passa por aqui. No jogo solo é aplicada na hora (igual a antes);
+    /// na rede vai para o lockstep e é aplicada nas duas máquinas no mesmo tick.
+    /// </summary>
+    void Send(Cmd c)
+    {
+        c.Team = (byte)W.Local;
+        if (_net != null) _net.Queue(c);
+        else Commands.Apply(W, c);
+    }
+
+    /// <summary>Situação da conexão: adversário que sai perde por abandono; dessincronização encerra a partida.</summary>
+    void CheckNet()
+    {
+        if (_net == null) return;
+        if (_net.Error != null && _netError == null)
+        {
+            _netError = _net.Error;
+            _net.Leave();
+            Sfx.Error();
+            return;
+        }
+        if (_net.OpponentLeft && W.Winner < 0)
+        {
+            W.SetWinner(W.Local, $"{_cfg.Names[W.Foe]} saiu da partida. Vitória por abandono.");
+            Notify(_net.LeftReason, Pal.Gold);
+        }
+        if (_net.Reconnecting && !_wasReconnecting) { AddChat(null, "Conexão perdida. Tentando reconectar…", Pal.Gold); Sfx.Warning(); }
+        if (!_net.Reconnecting && _wasReconnecting && !_net.OpponentLeft) { AddChat(null, "Conexão restabelecida. A partida continua!", Pal.GreenLight); Sfx.Click(); }
+        _wasReconnecting = _net.Reconnecting;
+    }
+    bool _wasReconnecting;
+
+    // ===================================================================
+    // Chat (só na partida em rede): Enter abre, Enter manda, Esc fecha
+    // ===================================================================
+
+    public bool ChatOpen => _chatOpen;
+    bool _chatOpen;
+    string _chatText = "";
+    readonly List<(string who, string text, Color color, float age)> _chat = new();
+    const int ChatMax = 120;
+
+    /// <summary>Linha no histórico do chat (who = null para avisos do sistema).</summary>
+    void AddChat(string who, string text, Color c)
+    {
+        _chat.Add((who, text, c, 0));
+        if (_chat.Count > 40) _chat.RemoveAt(0);
+    }
+
+    /// <summary>Manda uma mensagem (também usado pelos testes).</summary>
+    public void SayInChat(string text)
+    {
+        text = new string(text.Where(ch => !char.IsControl(ch)).ToArray()).Trim();
+        if (text.Length == 0 || _net == null) return;
+        if (text.Length > ChatMax) text = text[..ChatMax];
+        if (_net.SendChat(text)) AddChat(_cfg.Names[W.Local], text, W.Me.Color);
+        else AddChat(null, "Mensagem não enviada: sem conexão no momento.", Pal.Red);
+    }
+
+    /// <summary>Mensagens que chegaram + digitação. Roda antes de tudo para o Enter/Esc do chat não virarem atalhos.</summary>
+    void UpdateChat(float dt)
+    {
+        if (_net == null) return;
+        while (_net.ChatIn.Count > 0)
+        {
+            var msg = _net.ChatIn.Dequeue();
+            AddChat(_cfg.Names[W.Foe], msg.Length > ChatMax ? msg[..ChatMax] : msg, W.Enemy.Color);
+            Sfx.Click();
+        }
+        for (int i = 0; i < _chat.Count; i++) _chat[i] = (_chat[i].who, _chat[i].text, _chat[i].color, _chat[i].age + dt);
+
+        if (!_chatOpen)
+        {
+            if (Input.KeyPressed(Keys.Enter) && W.Winner < 0) { _chatOpen = true; _chatText = ""; Input.TextCapture = true; }
+            return;
+        }
+        if (Input.RawKeyPressed(Keys.Escape)) { CloseChat(); return; }
+        foreach (var ch in Input.Typed)
+        {
+            if (ch == '\b') { if (_chatText.Length > 0) _chatText = _chatText[..^1]; }
+            else if (ch == '\r' || ch == '\n') { SayInChat(_chatText); CloseChat(); return; }
+            else if (!char.IsControl(ch) && _chatText.Length < ChatMax) _chatText += ch;
+        }
+    }
+
+    void CloseChat()
+    {
+        _chatOpen = false;
+        _chatText = "";
+        Input.TextCapture = false;
+    }
+
+    void DrawChat(SpriteBatch sb)
+    {
+        if (_net == null) return;
+        var f = Assets.FontNarrow(15);
+        var fb = Assets.FontBold(15);
+        int x = 14;
+        float y = _bottom.Y - 14 - (_chatOpen ? 36 : 0);
+        // as mais recentes embaixo; com o chat fechado, cada mensagem some depois de 12 s
+        var lines = _chat.Where(c => _chatOpen || c.age < 12f).TakeLast(_chatOpen ? 10 : 5).Reverse().ToList();
+        foreach (var (who, text, color, age) in lines)
+        {
+            float a = _chatOpen ? 1f : Math.Clamp((12f - age) / 1.5f, 0, 1);
+            string prefix = who == null ? "" : who + ": ";
+            float pw = who == null ? 0 : fb.MeasureString(prefix).X;
+            float tw = f.MeasureString(text).X;
+            y -= 24;
+            sb.Fill(new Rectangle(x - 6, (int)y - 2, (int)(pw + tw) + 12, 22), Color.Black * (0.45f * a));
+            if (who != null) sb.Text(fb, prefix, new Vector2(x, y), Color.Lerp(color, Color.White, 0.35f) * a);
+            sb.Text(f, text, new Vector2(x + pw, y), (who == null ? color : Color.White) * a);
+        }
+        if (_chatOpen)
+        {
+            var r = new Rectangle(x - 6, _bottom.Y - 44, 520, 32);
+            sb.Panel(r, Pal.PanelBg * 0.95f, Pal.Gold, 2);
+            string shown = _chatText + ((int)(_realTime * 2) % 2 == 0 ? "|" : "");
+            sb.Text(fb, "Chat:", new Vector2(r.X + 8, r.Y + 6), Pal.Gold);
+            if (_chatText.Length == 0) sb.Text(f, "digite e aperte Enter  •  Esc fecha", new Vector2(r.X + 62, r.Y + 6), Color.White * 0.45f);
+            sb.Text(f, shown, new Vector2(r.X + 56, r.Y + 6), Color.White);
+        }
+    }
+
     void OnDamaged(Entity target, Entity source)
     {
-        if (target.Team != 0) return;
+        if (target.Team != W.Local) return;
         // a capital tem aviso próprio: vinheta vermelha + som, mesmo se estiver na tela
         if (target is Building { Def.Type: BuildingType.Centro } && _capitalAlertCd <= 0)
         {
@@ -150,7 +288,7 @@ public class GameScreen : Screen
             : new Rectangle(10, _top.Bottom + 10, 400, _objCollapsed ? 34 : 58);
     }
 
-    List<Unit> SelUnits => _selection.OfType<Unit>().Where(u => u.Team == 0 && !u.Dead).ToList();
+    List<Unit> SelUnits => _selection.OfType<Unit>().Where(u => u.Team == W.Local && !u.Dead).ToList();
     Building SelBuilding => _selection.Count == 1 ? _selection.First() as Building : null;
 
     public override void Update(float dt)
@@ -161,13 +299,28 @@ public class GameScreen : Screen
 
         // introdução: congela a simulação (relógio, IA e mundo não andam) até acabar ou ser pulada
         Ambience.SetGame();
+
+        // erro fatal da partida em rede: só o aviso e o botão de voltar
+        if (_netError != null)
+        {
+            _buttons.Clear();
+            var c = Ui / 2;
+            _buttons.Add(new UiButton { Rect = new Rectangle((int)c.X - 130, (int)c.Y + 40, 260, 46), Label = "Voltar ao menu", Hotkey = Keys.Escape, OnClick = () => Game.SetScreen(new MenuScreen()) });
+            Gui.Handle(_buttons);
+            return;
+        }
+
         if (IntroActive)
         {
             _introT += dt;
             if (Input.LeftPressed || Input.RightPressed || Input.AnyKeyPressed) SkipIntro();
             _cam.Clamp(W.W * World.T, W.H * World.T, _top.Height * Game1.UiScaleEff, _bottom.Height * Game1.UiScaleEff);
+            _net?.Update(0);   // na rede: continua recebendo mensagens (e percebe se o outro saiu) durante a introdução
+            CheckNet();
             return;
         }
+
+        UpdateChat(dt);
 
         if (Input.KeyPressed(Keys.Escape))
         {
@@ -181,23 +334,40 @@ public class GameScreen : Screen
         {
             BuildPauseButtons();
             Gui.Handle(_buttons);
+            // contra outra pessoa não existe pausa: o menu abre, mas a partida continua correndo
+            if (_net == null) return;
+            _net.Update(dt);
+            CheckNet();
             return;
         }
 
         if (W.Winner >= 0)
         {
             _endTimer += dt;
-            if (_endTimer > 3f) { Game.SetScreen(new EndScreen(_cfg, W)); return; }
+            if (_endTimer > 3f)
+            {
+                _net?.Leave();
+                Game.SetScreen(new EndScreen(_cfg, W));
+                return;
+            }
         }
 
-        float sdt = dt * _gameSpeed;
-        W.Update(sdt);
-        _ai.Update(sdt);
-        AutoPlayer?.Update(sdt);
-        _mission?.Update(sdt);
-        _tutorial?.Update(sdt, SelUnits.Count(u => u.IsWorker));
+        if (_net != null)
+        {
+            _net.Update(dt);
+            CheckNet();
+        }
+        else
+        {
+            float sdt = dt * _gameSpeed;
+            W.Update(sdt);
+            _ai?.Update(sdt);
+            AutoPlayer?.Update(sdt);
+            _mission?.Update(sdt);
+            _tutorial?.Update(sdt, SelUnits.Count(u => u.IsWorker));
+        }
 
-        _selection.RemoveWhere(e => e.Dead || (e.Team != 0 && e is Unit u && !W.CanSee(0, u)));
+        _selection.RemoveWhere(e => e.Dead || (e.Team != W.Local && e is Unit u && !W.CanSee(W.Local, u)));
         foreach (var g in _groups.Values) g.RemoveAll(e => e.Dead);
 
         for (int i = _msgs.Count - 1; i >= 0; i--)
@@ -210,7 +380,7 @@ public class GameScreen : Screen
         _capitalAlertCd -= dt;
         _capitalFlash = Math.Max(0, _capitalFlash - dt);
         _popWarnCd -= dt;
-        if (_popWarnCd <= 0 && W.Buildings.Any(b => b.Team == 0 && b.PopBlocked))
+        if (_popWarnCd <= 0 && W.Buildings.Any(b => b.Team == W.Local && b.PopBlocked))
         {
             _popWarnCd = 20f;
             Notify("População máxima: a produção parou. Construa Casas.", Pal.Gold);
@@ -318,19 +488,17 @@ public class GameScreen : Screen
     {
         var def = Defs.Buildings[bt];
         var tl = PlacementTile(bt, wp);
-        var p = W.Players[0];
+        var p = W.Me;
         if (!p.CanPay(def.Cost)) { Notify(p.Missing(def.Cost), Pal.Red); Sfx.Error(); _placing = null; return; }
-        var problem = W.PlaceProblem(bt, tl, 0);
+        var problem = W.PlaceProblem(bt, tl, W.Local);
         if (problem != null) { Notify(problem + ".", Pal.Red); Sfx.Error(); return; }
-        var b = W.PlaceBuilding(bt, tl, 0);
-        if (b == null) return;
-        Sfx.OrderBuild();
-        var builders = SelUnits.Where(u => u.IsWorker).ToList();
-        foreach (var u in builders)
+        // o prédio é criado (e pago) quando a ordem é aplicada; os trabalhadores selecionados vão erguê-lo
+        Send(new Cmd
         {
-            if (Input.Shift) u.Enqueue(new QueuedOrder(UnitOrder.Build, b.Pos, b));
-            else { u.Queue.Clear(); u.CmdBuild(b); }
-        }
+            Type = CmdType.Place, Kind = (byte)bt, A = tl.X, B = tl.Y, Queue = Input.Shift,
+            Ids = SelUnits.Where(u => u.IsWorker).Select(u => u.Id).ToArray(),
+        });
+        Sfx.OrderBuild();
         if (!Input.Shift) _placing = null;
     }
 
@@ -346,7 +514,7 @@ public class GameScreen : Screen
         float bestD = float.MaxValue;
         foreach (var u in W.Units)
         {
-            if (!u.WorldRect.Contains(wp) || !W.CanSee(0, u)) continue;
+            if (!u.WorldRect.Contains(wp) || !W.CanSee(W.Local, u)) continue;
             float d = Vector2.DistanceSquared(u.Pos, wp);
             if (d < bestD) { bestD = d; bestU = u; }
         }
@@ -355,7 +523,7 @@ public class GameScreen : Screen
         {
             var r = b.WorldRect;
             var ext = new RectangleF(r.X, r.Y - r.H * 0.35f, r.W, r.H * 1.35f);
-            if (ext.Contains(wp) && (b.Team == 0 || W.IsExplored(b))) return b;
+            if (ext.Contains(wp) && (b.Team == W.Local || W.IsExplored(b))) return b;
         }
         foreach (var n in W.Resources)
         {
@@ -374,15 +542,15 @@ public class GameScreen : Screen
         bool dbl = e == _lastClicked && _realTime - _lastClickTime < 0.35f;
         _lastClicked = e; _lastClickTime = _realTime;
 
-        if (dbl && e is Unit du && du.Team == 0)
+        if (dbl && e is Unit du && du.Team == W.Local)
         {
             _selection.Clear();
-            foreach (var u in W.Units.Where(u => u.Team == 0 && u.Def.Type == du.Def.Type && _cam.ViewRect.Contains(u.Pos)))
+            foreach (var u in W.Units.Where(u => u.Team == W.Local && u.Def.Type == du.Def.Type && _cam.ViewRect.Contains(u.Pos)))
                 _selection.Add(u);
         }
-        else if (Input.Shift && e is Unit su && su.Team == 0)
+        else if (Input.Shift && e is Unit su && su.Team == W.Local)
         {
-            if (!_selection.Remove(e)) { _selection.RemoveWhere(x => x is not Unit || x.Team != 0); _selection.Add(e); }
+            if (!_selection.Remove(e)) { _selection.RemoveWhere(x => x is not Unit || x.Team != W.Local); _selection.Add(e); }
         }
         else
         {
@@ -396,9 +564,9 @@ public class GameScreen : Screen
     {
         var min = Vector2.Min(a, b);
         var max = Vector2.Max(a, b);
-        var found = W.Units.Where(u => u.Team == 0 && u.Pos.X >= min.X - 10 && u.Pos.X <= max.X + 10 && u.Pos.Y >= min.Y - 10 && u.Pos.Y <= max.Y + 20).ToList();
+        var found = W.Units.Where(u => u.Team == W.Local && u.Pos.X >= min.X - 10 && u.Pos.X <= max.X + 10 && u.Pos.Y >= min.Y - 10 && u.Pos.Y <= max.Y + 20).ToList();
         if (!Input.Shift) _selection.Clear();
-        else _selection.RemoveWhere(x => x is not Unit || x.Team != 0);
+        else _selection.RemoveWhere(x => x is not Unit || x.Team != W.Local);
         // se a caixa pegou soldados e trabalhadores, prioriza os soldados
         if (found.Any(u => u.IsMilitary) && found.Any(u => u.IsWorker) && !Input.Shift) found = found.Where(u => u.IsMilitary).ToList();
         foreach (var u in found) _selection.Add(u);
@@ -411,10 +579,9 @@ public class GameScreen : Screen
         if (units.Count == 0)
         {
             var sb = SelBuilding;
-            if (sb != null && sb.Team == 0 && sb.TrainOptions.Any())
+            if (sb != null && sb.Team == W.Local && sb.TrainOptions.Any())
             {
-                sb.Rally = wp;
-                sb.RallyTarget = target is ResourceNode ? target : null;
+                Send(new Cmd { Type = CmdType.Rally, A = sb.Id, B = target is ResourceNode ? target.Id : 0, X = wp.X, Y = wp.Y });
                 W.AddClickMarker(wp, Pal.Gold);
                 Sfx.OrderMove();
             }
@@ -423,9 +590,9 @@ public class GameScreen : Screen
 
         bool q = Input.Shift;
 
-        if (target != null && target.Team == 1 && (target is Building || W.CanSee(0, target)))
+        if (target != null && target.Team == W.Foe && (target is Building || W.CanSee(W.Local, target)))
         {
-            foreach (var u in units) u.Give(new QueuedOrder(UnitOrder.Attack, target.Pos, target), q);
+            foreach (var u in units) Send(Cmd.Order(u, UnitOrder.Attack, target.Pos, target, q));
             W.AddClickMarker(target.Pos, Pal.Red);
             Sfx.OrderAttack();
             return;
@@ -438,7 +605,7 @@ public class GameScreen : Screen
             foreach (var u in workers)
             {
                 var n = first ? node : W.NearestResource(node.Kind, node.Pos, World.T * 3, u) ?? node;
-                u.Give(new QueuedOrder(UnitOrder.Gather, n.Pos, n), q);
+                Send(Cmd.Order(u, UnitOrder.Gather, n.Pos, n, q));
                 first = false;
             }
             var others = units.Where(u => !u.IsWorker).ToList();
@@ -448,22 +615,22 @@ public class GameScreen : Screen
             return;
         }
 
-        if (target is Building ob && ob.Team == 0)
+        if (target is Building ob && ob.Team == W.Local)
         {
             var workers = units.Where(u => u.IsWorker).ToList();
             if ((!ob.Done || ob.Damaged) && workers.Count > 0)
             {
-                foreach (var u in workers) u.Give(new QueuedOrder(UnitOrder.Build, ob.Pos, ob), q);
+                foreach (var u in workers) Send(Cmd.Order(u, UnitOrder.Build, ob.Pos, ob, q));
                 W.AddClickMarker(ob.Pos, Pal.Gold);
                 Sfx.OrderGather();
-                if (ob.Done) Notify(W.Players[0].Faction.Id == FactionId.MinasGerais ? "Reparando (grátis para Minas)." : "Reparando: custa um pouco de madeira.", Color.White);
+                if (ob.Done) Notify(W.Me.Faction.Id == FactionId.MinasGerais ? "Reparando (grátis para Minas)." : "Reparando: custa um pouco de madeira.", Color.White);
                 var rest = units.Where(u => !u.IsWorker).ToList();
                 if (rest.Count > 0) MoveGroup(rest, wp, false);
                 return;
             }
             if (ob.Def.Dropoff && workers.Any(u => u.Cargo > 0))
             {
-                foreach (var u in workers.Where(u => u.Cargo > 0)) u.CmdReturn();
+                foreach (var u in workers.Where(u => u.Cargo > 0)) Send(new Cmd { Type = CmdType.Return, A = u.Id });
                 Sfx.OrderGather();
                 return;
             }
@@ -490,9 +657,10 @@ public class GameScreen : Screen
             var d = dest + off;
             if (!W.Passable(W.TileOf(d))) d = dest;
             var kind = attackMove && ordered[i].IsMilitary ? UnitOrder.AttackMove : UnitOrder.Move;
-            ordered[i].Give(new QueuedOrder(kind, d, null), q);
+            Send(Cmd.Order(ordered[i], kind, d, null, q));
         }
-        if (!q && ordered.Any(u => u.Unreachable && (u.Order is UnitOrder.Move or UnitOrder.AttackMove)))
+        // na rede a ordem só vale daqui a alguns ticks: o aviso de "inalcançável" fica para o jogo solo
+        if (_net == null && !q && ordered.Any(u => u.Unreachable && (u.Order is UnitOrder.Move or UnitOrder.AttackMove)))
         {
             Notify(W.TerrainAt(dest) == Terrain.Water ? "Não dá para entrar no rio: use as partes rasas. Indo até a margem." : "Destino inalcançável: indo até o ponto mais próximo.", Pal.Gold);
             Sfx.Warning();
@@ -503,14 +671,17 @@ public class GameScreen : Screen
     {
         var specials = SelUnits.Where(u => u.HasAbility).ToList();
         if (specials.Count == 0) return;
-        int used = specials.Count(u => u.UseAbility());
-        if (used == 0) { Notify(specials.Select(u => u.AbilityBlock()).FirstOrDefault(s => s != null) ?? "Habilidade indisponível.", Pal.Gold); Sfx.Error(); }
+        // só manda a ordem para quem pode usar agora (a habilidade é validada de novo ao aplicar)
+        var ready = specials.Where(u => u.AbilityReady).ToList();
+        foreach (var u in ready) Send(new Cmd { Type = CmdType.Ability, A = u.Id });
+        if (ready.Count == 0) { Notify(specials.Select(u => u.AbilityBlock()).FirstOrDefault(s => s != null) ?? "Habilidade indisponível.", Pal.Gold); Sfx.Error(); }
     }
 
     void UsePower()
     {
-        var p = W.Players[0];
-        if (!W.UsePower(0))
+        var p = W.Me;
+        if (p.PowerReady) Send(new Cmd { Type = CmdType.Power });
+        else
         {
             Notify(p.PowerActive ? "O poder já está ativo." : $"{p.Faction.Power} recarrega em {Math.Ceiling(p.PowerCd)}s.", Color.White);
             Sfx.Error();
@@ -521,7 +692,7 @@ public class GameScreen : Screen
     {
         if (Input.KeyPressed(Keys.H) && !Input.Ctrl)
         {
-            var c = W.Buildings.FirstOrDefault(b => b.Team == 0 && b.Def.Type == BuildingType.Centro);
+            var c = W.Buildings.FirstOrDefault(b => b.Team == W.Local && b.Def.Type == BuildingType.Centro);
             if (c != null) { _selection.Clear(); _selection.Add(c); _cam.CenterOn(c.Pos); }
         }
         if (Input.KeyPressed(Keys.Space) && _selection.Count > 0)
@@ -534,7 +705,7 @@ public class GameScreen : Screen
             if (!Input.KeyPressed(nums[i])) continue;
             if (Input.Ctrl)
             {
-                _groups[i] = _selection.Where(e => e.Team == 0).ToList();
+                _groups[i] = _selection.Where(e => e.Team == W.Local).ToList();
                 Notify($"Grupo {i + 1} criado ({_groups[i].Count}).", Color.White);
             }
             else if (_groups.TryGetValue(i, out var g) && g.Count > 0)
@@ -549,7 +720,7 @@ public class GameScreen : Screen
 
     void SelectIdleWorker()
     {
-        var idle = W.Units.Where(u => u.Team == 0 && u.IsWorker && u.IsIdle).ToList();
+        var idle = W.Units.Where(u => u.Team == W.Local && u.IsWorker && u.IsIdle).ToList();
         if (idle.Count == 0) { Notify("Nenhum trabalhador ocioso.", Color.White); return; }
         var u = idle[_idleCycle++ % idle.Count];
         _selection.Clear();
@@ -560,20 +731,18 @@ public class GameScreen : Screen
     void Train(Building b, UnitType t)
     {
         var def = Defs.Units[t];
-        var p = W.Players[0];
+        var p = W.Me;
         if (b.Queue.Count >= 6) { Notify("Fila cheia (máximo 6).", Pal.Red); Sfx.Error(); return; }
         if (!p.CanPay(def.Cost)) { Notify(p.Missing(def.Cost), Pal.Red); Sfx.Error(); return; }
-        p.Pay(def.Cost);
-        b.Queue.Add(t);
-        if (p.Pop + b.Queue.Sum(x => Defs.Units[x].Pop) > p.PopCap) Notify("População máxima! Construa Casas para liberar espaço.", Pal.Gold);
+        bool overPop = p.Pop + b.Queue.Sum(x => Defs.Units[x].Pop) + def.Pop > p.PopCap;
+        Send(new Cmd { Type = CmdType.Train, A = b.Id, Kind = (byte)t });
+        if (overPop) Notify("População máxima! Construa Casas para liberar espaço.", Pal.Gold);
     }
 
     void CancelQueue(Building b, int i)
     {
         if (i >= b.Queue.Count) return;
-        W.Players[0].Refund(Defs.Units[b.Queue[i]].Cost);
-        b.Queue.RemoveAt(i);
-        if (i == 0) b.ProdTimer = 0;
+        Send(new Cmd { Type = CmdType.Cancel, A = b.Id, B = i });
     }
 
     // ===================================================================
@@ -587,7 +756,7 @@ public class GameScreen : Screen
         _buttons.Clear();
         _buttons.Add(new UiButton { Rect = new Rectangle(_top.Right - 96, 5, 88, 30), Label = "Menu", FontSize = 14, Accent = Pal.InkSoft, OnClick = () => _paused = true });
         _buttons.Add(new UiButton { Rect = new Rectangle(_top.Right - 150, 5, 48, 30), Label = "?", FontSize = 16, Accent = Pal.InkSoft, OnClick = () => _help = !_help, TooltipTitle = "Ajuda (F1)", Tooltip = "Mostra os controles e as regras de vantagem." });
-        int idle = W.Units.Count(u => u.Team == 0 && u.IsWorker && u.IsIdle);
+        int idle = W.Units.Count(u => u.Team == W.Local && u.IsWorker && u.IsIdle);
         if (idle > 0)
             _buttons.Add(new UiButton
             {
@@ -598,9 +767,9 @@ public class GameScreen : Screen
         var cmds = new List<UiButton>();
         var units = SelUnits;
         var sbld = SelBuilding;
-        var p = W.Players[0];
+        var p = W.Me;
 
-        if (sbld != null && sbld.Team == 0)
+        if (sbld != null && sbld.Team == W.Local)
         {
             if (sbld.Done)
                 foreach (var t in sbld.TrainOptions)
@@ -671,7 +840,7 @@ public class GameScreen : Screen
             cmds.Add(new UiButton
             {
                 Label = "Parar", Hotkey = Keys.X, Accent = Pal.InkSoft, FontSize = 15, TooltipTitle = "Parar (X)", Tooltip = "Interrompe a ordem atual e limpa a fila.",
-                OnClick = () => { foreach (var u in SelUnits) { u.Queue.Clear(); u.CmdStop(); } }
+                OnClick = () => { foreach (var u in SelUnits) Send(new Cmd { Type = CmdType.Stop, A = u.Id }); }
             });
 
             // retratos da seleção múltipla
@@ -743,6 +912,17 @@ public class GameScreen : Screen
         Row(104, () => { Assets.MasterVolume = Step(Assets.MasterVolume, -0.1f); Ambience.ApplyVolume(); }, () => { Assets.MasterVolume = Step(Assets.MasterVolume, 0.1f); Ambience.ApplyVolume(); });
         Row(150, () => Assets.SfxVolume = Step(Assets.SfxVolume, -0.1f), () => { Assets.SfxVolume = Step(Assets.SfxVolume, 0.1f); Sfx.Click(); });
         Row(196, () => { Assets.MusicVolume = Step(Assets.MusicVolume, -0.1f); Ambience.ApplyVolume(); }, () => { Assets.MusicVolume = Step(Assets.MusicVolume, 0.1f); Ambience.ApplyVolume(); });
+        if (_net != null)
+        {
+            // em rede não há velocidade nem reinício: os dois mundos andam juntos. Sair = desistir.
+            _buttons.Add(new UiButton
+            {
+                Rect = new Rectangle(x, y + 294, 340, 40), Label = "Desistir e sair", FontSize = 16, Accent = new Color(150, 60, 50),
+                TooltipTitle = "Desistir", Tooltip = "Encerra a partida: o adversário vence por abandono.",
+                OnClick = () => { _net.Leave(); Game.SetScreen(new MenuScreen()); }
+            });
+            return;
+        }
         _buttons.Add(new UiButton
         {
             Rect = new Rectangle(x, y + 246, 340, 40), Label = $"Velocidade: {_gameSpeed:0.##}x", FontSize = 16, Accent = Pal.InkSoft,
@@ -804,11 +984,11 @@ public class GameScreen : Screen
         {
             var def = Defs.Buildings[bt];
             var tl = PlacementTile(bt, MouseWorld);
-            bool ok = W.CanPlace(bt, tl, 0) && W.Players[0].CanPay(def.Cost);
+            bool ok = W.CanPlace(bt, tl, W.Local) && W.Me.CanPay(def.Cost);
             for (int x = 0; x < def.Size; x++)
                 for (int y = 0; y < def.Size; y++)
                     sb.Fill(new Rectangle((tl.X + x) * World.T + 2, (tl.Y + y) * World.T + 2, World.T - 4, World.T - 4), (ok ? Pal.GreenLight : Pal.Red) * 0.35f);
-            var spriteIdx = W.Players[0].Faction.BuildingSprite(bt);
+            var spriteIdx = W.Me.Faction.BuildingSprite(bt);
             var tex = Assets.Structure(spriteIdx);
             float w = def.Size * World.T;
             sb.SpriteFeet(tex, new Vector2((tl.X + def.Size / 2f) * World.T, (tl.Y + def.Size) * World.T - 2), w * 0.95f / tex.Width, Color.White * 0.6f);
@@ -847,7 +1027,7 @@ public class GameScreen : Screen
         if (_placing is BuildingType bt2 && !_paused)
         {
             var tl = PlacementTile(bt2, MouseWorld);
-            var problem = W.PlaceProblem(bt2, tl, 0) ?? (W.Players[0].CanPay(Defs.Buildings[bt2].Cost) ? null : "Recursos insuficientes");
+            var problem = W.PlaceProblem(bt2, tl, W.Local) ?? (W.Me.CanPay(Defs.Buildings[bt2].Cost) ? null : "Recursos insuficientes");
             if (problem != null)
                 sb.TextCenter(Assets.Font(13), problem, new Vector2((tl.X + Defs.Buildings[bt2].Size / 2f) * World.T, tl.Y * World.T - 34), Pal.Red);
         }
@@ -884,13 +1064,34 @@ public class GameScreen : Screen
         if (_placing != null) sb.TextCenter(Assets.FontNarrow(16), "Clique para construir  •  Shift: várias  •  Botão direito/Esc: cancelar", new Vector2(Ui.X / 2, _bottom.Y - 18), Color.White);
         if (_attackMoveMode) sb.TextCenter(Assets.FontNarrow(16), "Clique no destino do ataque  •  Botão direito/Esc: cancelar", new Vector2(Ui.X / 2, _bottom.Y - 18), Pal.Gold);
 
+        DrawChat(sb);
+        if (_net != null && (_net.Reconnecting || _net.WaitTime > 0.4f) && _netError == null && W.Winner < 0)
+        {
+            // ordens do adversário ainda não chegaram, ou a conexão caiu: a simulação espera por ele
+            var wr = new Rectangle((int)Ui.X / 2 - 260, _top.Bottom + 56, 520, 34);
+            sb.Panel(wr, Pal.PanelBg * 0.92f, _net.Reconnecting ? Pal.Red : Pal.Gold, 2);
+            string msg = _net.Reconnecting
+                ? $"Conexão perdida — reconectando… {Math.Max(0, Lockstep.ReconnectWindow - _net.ReconnectTime):0}s"
+                : $"Aguardando {_cfg.Names[W.Foe]}… ({_net.WaitTime:0}s)";
+            sb.TextCenter(Assets.FontBold(16), msg, wr.Center.ToVector2(), _net.Reconnecting ? new Color(255, 160, 140) : Pal.Gold);
+        }
         if (_help) DrawHelp(sb);
         if (_paused) DrawPause(sb);
+        if (_netError != null)
+        {
+            sb.Fill(new Rectangle(0, 0, (int)Ui.X, (int)Ui.Y), Color.Black * 0.65f);
+            var er = new Rectangle((int)Ui.X / 2 - 300, (int)Ui.Y / 2 - 110, 600, 220);
+            sb.Panel(er, Pal.Paper, Pal.Red, 3);
+            sb.TextCenter(Assets.Font(26), "Partida encerrada", new Vector2(er.Center.X, er.Y + 34), Pal.Red, false);
+            float ly = er.Y + 70;
+            foreach (var line in Gfx.Wrap(Assets.FontNarrow(17), _netError, er.Width - 60)) { sb.TextCenter(Assets.FontNarrow(17), line, new Vector2(er.Center.X, ly), Pal.Ink, false); ly += 24; }
+            Gui.DrawAll(sb, _buttons);
+        }
         if (W.Winner >= 0)
         {
             float a = Math.Min(1, _endTimer / 2.5f);
             sb.Fill(new Rectangle(0, 0, (int)Ui.X, (int)Ui.Y), Color.Black * (a * 0.6f));
-            sb.TextCenter(Assets.Font(64), W.Winner == 0 ? "VITÓRIA!" : "DERROTA", Ui / 2, (W.Winner == 0 ? Pal.Gold : Pal.Red) * a);
+            sb.TextCenter(Assets.Font(64), W.Winner == W.Local ? "VITÓRIA!" : "DERROTA", Ui / 2, (W.Winner == W.Local ? Pal.Gold : Pal.Red) * a);
         }
         sb.End();
     }
@@ -899,7 +1100,7 @@ public class GameScreen : Screen
     {
         sb.Fill(_top, Pal.PanelBg * 0.96f);
         sb.Fill(new Rectangle(0, _top.Bottom - 2, _top.Width, 2), Pal.Gold * 0.7f);
-        var p = W.Players[0];
+        var p = W.Me;
         var num = Assets.FontBold(20);
         var lab = Assets.FontBold(10);
         float x = 10;
@@ -912,7 +1113,7 @@ public class GameScreen : Screen
         }
         sb.SpriteFit(Assets.Structure(p.Faction.BuildingSprite(BuildingType.Casa)), new Rectangle((int)x, 6, 28, 28), Color.White, 1f);
         bool full = p.Pop >= p.PopCap;
-        bool blink = full && W.Buildings.Any(b => b.Team == 0 && b.PopBlocked) && (int)(_realTime * 3) % 2 == 0;
+        bool blink = full && W.Buildings.Any(b => b.Team == W.Local && b.PopBlocked) && (int)(_realTime * 3) % 2 == 0;
         sb.Text(num, $"{p.Pop}/{p.PopCap}", new Vector2(x + 33, 2), full ? (blink ? Color.White : new Color(255, 120, 100)) : Color.White);
         sb.Text(lab, full ? "POPULAÇÃO MÁXIMA" : "POPULAÇÃO", new Vector2(x + 34, 25), full ? new Color(255, 120, 100) : Color.White * 0.6f, false);
         x += 128;
@@ -946,8 +1147,8 @@ public class GameScreen : Screen
             var bar = new Rectangle(box.X + 2, box.Bottom - 4, box.Width - 4, 3);
             sb.Fill(bar, Color.Black * 0.4f);
             int half = bar.Width / 2;
-            if (prog > 0) sb.Fill(new Rectangle(bar.X + half, bar.Y, (int)(half * prog), 3), W.Players[0].Color);
-            else if (prog < 0) sb.Fill(new Rectangle(bar.X + half - (int)(half * -prog), bar.Y, (int)(half * -prog), 3), W.Players[1].Color);
+            if (prog > 0) sb.Fill(new Rectangle(bar.X + half, bar.Y, (int)(half * prog), 3), W.Me.Color);
+            else if (prog < 0) sb.Fill(new Rectangle(bar.X + half - (int)(half * -prog), bar.Y, (int)(half * -prog), 3), W.Enemy.Color);
         }
 
         // faixa de domínio (contagem para a vitória/derrota)
@@ -1004,7 +1205,7 @@ public class GameScreen : Screen
         }
         else
         {
-            sb.Text(Assets.FontNarrow(12), $"OBJETIVO  •  {Clock}  •  IA: {_ai.State.ToString().ToUpperInvariant()}", new Vector2(r.X + 10, r.Y + 4), Pal.Gold, false);
+            sb.Text(Assets.FontNarrow(12), (_net != null ? $"OBJETIVO  •  {Clock}  •  VS {_cfg.Names[W.Foe].ToUpperInvariant()}  •  {_net.Peer.PingMs} ms" : $"OBJETIVO  •  {Clock}  •  IA: {_ai?.State.ToString().ToUpperInvariant()}"), new Vector2(r.X + 10, r.Y + 4), Pal.Gold, false);
             sb.Text(Assets.FontNarrow(15), "Domine as 2 bandeiras por 90s", new Vector2(r.X + 10, r.Y + 18), Color.White);
             if (!_objCollapsed) sb.Text(Assets.FontNarrow(14), "ou destrua o Centro de Comando inimigo.", new Vector2(r.X + 10, r.Y + 36), Pal.Paper * 0.85f, false);
         }
@@ -1026,7 +1227,7 @@ public class GameScreen : Screen
         }
         foreach (var b in W.Buildings)
         {
-            if (b.Team != 0 && !W.IsExplored(b)) continue;
+            if (b.Team != W.Local && !W.IsExplored(b)) continue;
             var m = WorldToMini(new Vector2(b.WorldRect.X, b.WorldRect.Y));
             var s = b.Size * _mini.Width / (float)W.W;
             sb.Fill(m, new Vector2(s, s), b.Owner.Color);
@@ -1035,7 +1236,7 @@ public class GameScreen : Screen
         sb.Draw(_miniFog, _mini, Color.White);
         foreach (var u in W.Units)
         {
-            if (u.Team != 0 && !W.CanSee(0, u)) continue;
+            if (u.Team != W.Local && !W.CanSee(W.Local, u)) continue;
             var m = WorldToMini(u.Pos);
             sb.Fill(m - Vector2.One * 1.5f, new Vector2(3, 3), _selection.Contains(u) ? Color.White : u.Owner.Color);
         }
@@ -1071,7 +1272,7 @@ public class GameScreen : Screen
     /// <summary>Cartão do comandante: retrato, nome, poder e recarga (ícone dessaturado + contador).</summary>
     void DrawCommander(SpriteBatch sb)
     {
-        var p = W.Players[0];
+        var p = W.Me;
         var f = p.Faction;
         var r = _power;
         bool hover = r.Contains(Input.UiMousePt);
@@ -1101,7 +1302,7 @@ public class GameScreen : Screen
     {
         var r = _info;
         var units = SelUnits;
-        var p = W.Players[0];
+        var p = W.Me;
         var fBig = Assets.Font(18);
         var fS = Assets.FontNarrow(14);
 
@@ -1133,13 +1334,13 @@ public class GameScreen : Screen
                 sb.SpriteFit(Defs.UnitSprite(u.Def, u.Owner.ColorSet, u.Owner.Faction.Id), portrait, Color.White, 1.6f);
                 sb.Text(fBig, u.Def.Name, new Vector2(r.X + 92, r.Y + 8), Color.White);
                 FlagArt.Draw(sb, u.Owner.Faction.Id, new Rectangle(r.X + 92, r.Y + 34, 18, 12));
-                sb.Text(Assets.FontNarrow(13), u.Team == 0 ? $"{u.Owner.Faction.Name} (você)" : $"{u.Owner.Faction.Name} (inimigo)", new Vector2(r.X + 116, r.Y + 32), u.Owner.Color, false);
-                sb.Bar(new Rectangle(r.X + 92, r.Y + 52, 180, 8), u.Hp / u.MaxHp, u.Team == 0 ? Pal.GreenLight : Pal.Red, Color.Black * 0.5f);
+                sb.Text(Assets.FontNarrow(13), u.Team == W.Local ? $"{u.Owner.Faction.Name} (você)" : $"{u.Owner.Faction.Name} (inimigo)", new Vector2(r.X + 116, r.Y + 32), u.Owner.Color, false);
+                sb.Bar(new Rectangle(r.X + 92, r.Y + 52, 180, 8), u.Hp / u.MaxHp, u.Team == W.Local ? Pal.GreenLight : Pal.Red, Color.Black * 0.5f);
                 sb.Text(Assets.FontNarrow(13), $"{Math.Ceiling(u.Hp)}/{u.MaxHp}", new Vector2(r.X + 280, r.Y + 48), Color.White, false);
                 string alcance = u.Def.IsRanged ? "à distância" : "corpo a corpo";
                 sb.Text(fS, $"Dano {u.Def.Dmg:0}  •  {alcance}  •  Velocidade {u.Def.Speed:0}", new Vector2(r.X + 12, r.Y + 88), Pal.Paper * 0.85f, false);
                 sb.Text(fS, u.Def.Strong, new Vector2(r.X + 12, r.Y + 106), Pal.Gold, false);
-                if (u.Team == 0) sb.Text(fS, u.StatusText(), new Vector2(r.X + 12, r.Y + 124), Color.White, false);
+                if (u.Team == W.Local) sb.Text(fS, u.StatusText(), new Vector2(r.X + 12, r.Y + 124), Color.White, false);
                 break;
             }
             case Building b:
@@ -1147,15 +1348,15 @@ public class GameScreen : Screen
                 sb.SpriteFit(b.Texture, portrait, Color.White, 1.2f);
                 sb.Text(fBig, b.Def.Name, new Vector2(r.X + 92, r.Y + 8), Color.White);
                 FlagArt.Draw(sb, b.Owner.Faction.Id, new Rectangle(r.X + 92, r.Y + 34, 18, 12));
-                sb.Text(Assets.FontNarrow(13), b.Team == 0 ? $"{b.Owner.Faction.Name} (você)" : $"{b.Owner.Faction.Name} (inimigo)", new Vector2(r.X + 116, r.Y + 32), b.Owner.Color, false);
-                sb.Bar(new Rectangle(r.X + 92, r.Y + 52, 180, 8), b.Hp / b.MaxHp, b.Team == 0 ? Pal.GreenLight : Pal.Red, Color.Black * 0.5f);
+                sb.Text(Assets.FontNarrow(13), b.Team == W.Local ? $"{b.Owner.Faction.Name} (você)" : $"{b.Owner.Faction.Name} (inimigo)", new Vector2(r.X + 116, r.Y + 32), b.Owner.Color, false);
+                sb.Bar(new Rectangle(r.X + 92, r.Y + 52, 180, 8), b.Hp / b.MaxHp, b.Team == W.Local ? Pal.GreenLight : Pal.Red, Color.Black * 0.5f);
                 sb.Text(Assets.FontNarrow(13), $"{Math.Ceiling(b.Hp)}/{Math.Ceiling(b.MaxHp)}", new Vector2(r.X + 280, r.Y + 48), Color.White, false);
                 if (!b.Done)
                 {
                     sb.Text(fS, $"Em construção: {b.Progress * 100:0}%", new Vector2(r.X + 92, r.Y + 64), Pal.Gold, false);
                     sb.Text(fS, "Selecione trabalhadores e clique com o botão direito aqui para ajudar.", new Vector2(r.X + 12, r.Y + 92), Pal.Paper * 0.8f, false);
                 }
-                else if (b.Team == 0 && b.Queue.Count > 0)
+                else if (b.Team == W.Local && b.Queue.Count > 0)
                 {
                     var def = Defs.Units[b.Queue[0]];
                     sb.Text(fS, $"Treinando {def.Name}: {b.ProdTimer / def.Time * 100:0}%", new Vector2(r.X + 92, r.Y + 64), Color.White, false);
@@ -1164,7 +1365,7 @@ public class GameScreen : Screen
                 }
                 else
                 {
-                    var lines = Gfx.Wrap(fS, b.Def.Desc + (b.Team == 0 && b.TrainOptions.Any() ? " Botão direito no mapa define o ponto de encontro." : ""), r.Width - 24);
+                    var lines = Gfx.Wrap(fS, b.Def.Desc + (b.Team == W.Local && b.TrainOptions.Any() ? " Botão direito no mapa define o ponto de encontro." : ""), r.Width - 24);
                     for (int i = 0; i < Math.Min(3, lines.Count); i++) sb.Text(fS, lines[i], new Vector2(r.X + 12, r.Y + 90 + i * 18), Pal.Paper * 0.8f, false);
                 }
                 break;
@@ -1223,7 +1424,7 @@ public class GameScreen : Screen
     /// <summary>Apresentação de ~3 s: bandeira, facção, comandante, mapa e objetivo. Pula com clique ou tecla.</summary>
     void DrawIntro(SpriteBatch sb)
     {
-        var p = W.Players[0];
+        var p = W.Me;
         var f = p.Faction;
         float a = Math.Min(1, _introT / 0.3f) * Math.Min(1, (IntroDuration - _introT) / 0.4f);
         a = Math.Clamp(a, 0, 1);
