@@ -86,26 +86,45 @@ public static class Scenery
         for (int t = 0; t < 2; t++)
         {
             var st = w.StartTiles[t];
-            float back = t == 0 ? -1 : 1;
+            float back = -w.BaseDir[t];   // lado de trás da base (longe do rio)
+            float vf = w.BaseFlip[t];
             var c = w.CenterOf(new Point(st.X + 1, st.Y + 1));
+            // posição atrás da base; se cair em cima de um recurso (moita, árvore, pedra), recua até achar chão livre
+            Vector2 At(float dx, float dy)
+            {
+                for (int k = 0; k < 4; k++)
+                {
+                    var p = c + new Vector2(back * (dx + k * 48), vf * dy);
+                    var tile = w.TileOf(p);
+                    bool busy = false;
+                    for (int ox = -1; ox <= 1 && !busy; ox++)
+                        for (int oy = -1; oy <= 0 && !busy; oy++)
+                        {
+                            var q = new Point(tile.X + ox, tile.Y + oy);
+                            if (w.InBounds(q) && w.Occ[q.X, q.Y] != null) busy = true;
+                        }
+                    if (!busy && p.X > 40 && p.X < w.W * T - 40) return p;
+                }
+                return c + new Vector2(back * dx, vf * dy);
+            }
             switch (w.Players[t].Faction.Id)
             {
                 case FactionId.Amazonas:
                     for (int i = 0; i < 3; i++)
-                        props.Add(new Prop { Kind = Kind.Acai, Pos = c + new Vector2(back * (215 + r.Next(40)), -40 + i * 70 + r.Next(-10, 10)), Scale = 1f + (i % 2) * 0.15f, Var = r.Next(1000) });
-                    props.Add(new Prop { Kind = Kind.Bananeira, Pos = c + new Vector2(back * 150, 150), Scale = 1.05f, Var = r.Next(1000) });
-                    props.Add(new Prop { Kind = Kind.Bananeira, Pos = c + new Vector2(back * 205, 175), Scale = 0.9f, Var = r.Next(1000) });
+                        props.Add(new Prop { Kind = Kind.Acai, Pos = At((215 + r.Next(40)), -40 + i * 70 + r.Next(-10, 10)), Scale = 1f + (i % 2) * 0.15f, Var = r.Next(1000) });
+                    props.Add(new Prop { Kind = Kind.Bananeira, Pos = At(150, 150), Scale = 1.05f, Var = r.Next(1000) });
+                    props.Add(new Prop { Kind = Kind.Bananeira, Pos = At(205, 175), Scale = 0.9f, Var = r.Next(1000) });
                     break;
                 case FactionId.MinasGerais:
-                    props.Add(new Prop { Kind = Kind.Igreja, Pos = c + new Vector2(back * 205, -40), Scale = 1f, Var = r.Next(1000) });
-                    props.Add(new Prop { Kind = Kind.Ipe, Pos = c + new Vector2(back * 150, 140), Scale = 1.1f, Var = 0 });     // ipê-amarelo
-                    props.Add(new Prop { Kind = Kind.Ipe, Pos = c + new Vector2(back * 250, 120), Scale = 0.95f, Var = 1 });   // ipê-roxo
+                    props.Add(new Prop { Kind = Kind.Igreja, Pos = At(205, -40), Scale = 1f, Var = r.Next(1000) });
+                    props.Add(new Prop { Kind = Kind.Ipe, Pos = At(150, 140), Scale = 1.1f, Var = 0 });     // ipê-amarelo
+                    props.Add(new Prop { Kind = Kind.Ipe, Pos = At(250, 120), Scale = 0.95f, Var = 1 });   // ipê-roxo
                     break;
                 default:
                     for (int i = 0; i < 3; i++)
-                        props.Add(new Prop { Kind = Kind.Araucaria, Pos = c + new Vector2(back * (250 + (i % 2) * 40), -250 + i * 55), Scale = 1f + (i % 2) * 0.15f, Var = r.Next(1000) });
+                        props.Add(new Prop { Kind = Kind.Araucaria, Pos = At((250 + (i % 2) * 40), -250 + i * 55), Scale = 1f + (i % 2) * 0.15f, Var = r.Next(1000) });
                     for (int i = 0; i < 4; i++)
-                        props.Add(new Prop { Kind = Kind.Boi, Pos = c + new Vector2(back * (130 + i * 34), 150 + (i % 2) * 26), Scale = 1f, Var = r.Next(1000) });
+                        props.Add(new Prop { Kind = Kind.Boi, Pos = At((130 + i * 34), 150 + (i % 2) * 26), Scale = 1f, Var = r.Next(1000) });
                     break;
             }
         }

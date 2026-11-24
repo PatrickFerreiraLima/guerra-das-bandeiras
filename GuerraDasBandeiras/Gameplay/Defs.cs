@@ -295,5 +295,8 @@ public class GameConfig
     /// <summary>Nome de cada time (anfitrião, convidado) mostrado na partida em rede.</summary>
     public string[] Names = { "Você", "Inimigo" };
     public bool Versus => Mode == GameMode.Versus;
+    /// <summary>Sorteia onde fica cada base (lado do rio, norte/centro/sul). Tutorial e missão sempre usam o lugar clássico.</summary>
+    public bool RandomBases = true;
+    public bool UsesRandomBases => RandomBases && Mode is GameMode.Skirmish or GameMode.Versus;
     public static readonly string[] DifficultyNames = { "Fácil", "Normal", "Difícil" };
 }

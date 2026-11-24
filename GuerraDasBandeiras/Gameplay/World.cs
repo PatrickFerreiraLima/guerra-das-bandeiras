@@ -5,7 +5,7 @@ namespace GuerraDasBandeiras.Gameplay;
 public class World
 {
     public const int T = Defs.Tile;
-    public readonly int W = 64, H = 40;
+    public readonly int W = 80, H = 50;
     public readonly Terrain[,] Ter;
     public readonly byte[,] TileVar;
     public readonly Entity[,] Occ;
@@ -49,6 +49,10 @@ public class World
     public readonly float[] HoldTimer = new float[2];
 
     public Point[] StartTiles = new Point[2];
+    /// <summary>Para que lado cada base "olha": +1 = base a oeste (o rio fica à direita), -1 = base a leste.</summary>
+    public readonly int[] BaseDir = { 1, -1 };
+    /// <summary>+1 ou -1: o "kit" de recursos da base pode vir espelhado na vertical (madeira em cima ou embaixo).</summary>
+    public readonly int[] BaseFlip = { 1, 1 };
 
     // Ganchos para a tela (mensagens, sons, alertas)
     public Action<string, Color> Notify;

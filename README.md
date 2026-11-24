@@ -32,6 +32,7 @@ Atalhos de linha de comando úteis no desenvolvimento:
 | `dotnet run -- --quick` | Pula o menu e abre uma escaramuça |
 | `dotnet run -- --sheet folha.png` | Gera uma folha com todos os sprites numerados (para escolher assets) |
 | `dotnet run -- --chars personagens.png` | Gera uma folha ampliada com todos os personagens em pixel art (por facção e com o time azul do espelho) |
+| `dotnet run -- --maps mapas.png` | Mostra 12 mapas sorteados (sementes 1 a 12) vistos de cima, com as bases marcadas — para conferir a variedade |
 | `dotnet run -- --shot img.png game 600` | Teste automático: IA x IA por 600 s simulados, salva captura + relatório `.txt` |
 | `dotnet run -- --shot img.png battle 5` | Captura de uma batalha montada na Bandeira do Sul |
 | `GB_FOCUS=31,19 dotnet run -- --shot img.png scenery 2` | Captura com o mapa revelado, enquadrando o tile informado (bom para revisar cenário) |
@@ -71,7 +72,7 @@ Todos os números de habilidades, comandantes, bandeiras, limites e bônus de fa
 - **5 unidades compartilhadas + 3 especiais**: Trabalhador, Espadachim, Lanceiro, Atirador, Batedor.
 - **Vantagens**: lanceiro vence cavalaria; atirador vence infantaria lenta; infantaria alcança atiradores.
 - **Terreno**: mata esconde batedores, serra dá visão/alcance extra, rio só se cruza nas partes rasas.
-- **Mapa "Encontro das Fronteiras"**: mata a oeste, serra a leste, planície ao sul, rio com duas travessias.
+- **Mapa "Encontro das Fronteiras"** (80x50): mata a oeste, serra a leste, planície ao sul, rio com duas travessias. Na escaramuça e no 1x1 em rede **a base de cada um é sorteada**: lado do rio, norte/centro/sul, leve deslocamento e espelhamento — sempre com o mesmo kit de recursos à mesma distância (se cair na mata ou na serra, abre uma clareira). Tutorial e missão usam o lugar clássico.
 - **Vitória**: dominar as 2 bandeiras por 90 s ou destruir o Centro inimigo.
 - **Tutorial rápido** (6 passos, com destaque dourado no elemento de cada etapa).
 - **Bandeiras com bônus**: Sul = econômica (+10% comida), Norte = militar (+10% resistência); só soldados capturam.

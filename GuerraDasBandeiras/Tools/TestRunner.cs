@@ -82,8 +82,11 @@ public static partial class TestRunner
 
     // ---------------- auxiliares ----------------
 
+    /// <summary>Ponto do mapa antigo (64x40) levado ao mapa novo (80x50): os testes miram os mesmos lugares (planície, rio, bosques).</summary>
+    static Point P(int x, int y) => new((int)MathF.Round(x * 80 / 64f), (int)MathF.Round(y * 50 / 40f));
+
     static World NewWorld(FactionId p = FactionId.Amazonas, FactionId e = FactionId.MinasGerais, GameMode mode = GameMode.Skirmish) =>
-        new(new GameConfig { Mode = mode, PlayerFaction = p, EnemyFaction = e, Seed = 11 });
+        new(new GameConfig { Mode = mode, PlayerFaction = p, EnemyFaction = e, Seed = 11, RandomBases = false });
 
     static void Sim(World w, float secs, params AIController[] ais)
     {
@@ -178,13 +181,14 @@ public static partial class TestRunner
                     for (float t = 0; t < 1800 && w.Winner < 0; t += Dt) { w.Update(Dt); ai0.Update(Dt); ai1.Update(Dt); }
                     games[a]++; games[b]++;
                     if (w.Winner == 0) wins[a]++; else if (w.Winner == 1) wins[b]++;
-                    if (w.Winner >= 0) side[w.Winner]++;
-                    var key = $"{Abbr[a]}(oeste) x {Abbr[b]}(leste)"; pair[key] = pair.GetValueOrDefault(key) + (w.Winner == 0 ? 1 : 0);
+                    // as bases são sorteadas: o lado (oeste/leste) vem do mapa, não do número do time
+                    if (w.Winner >= 0) side[w.BaseDir[w.Winner] > 0 ? 0 : 1]++;
+                    var key = $"{Abbr[a]} x {Abbr[b]}"; pair[key] = pair.GetValueOrDefault(key) + (w.Winner == 0 ? 1 : 0);
                     total += w.Time; n++;
                 }
         string rates = string.Join(", ", Enumerable.Range(0, 3).Select(i => $"{Abbr[i]} {wins[i]}/{games[i]} ({100f * wins[i] / games[i]:0}%)"));
         bool ok = Enumerable.Range(0, 3).All(i => wins[i] / (float)games[i] is >= 0.2f and <= 0.8f);
-        Check("Equilíbrio entre facções (24 partidas IA x IA)", ok, $"vitórias: {rates}; por lado: oeste {side[0]}, leste {side[1]}; vitórias do lado oeste por confronto (de 4): {string.Join(", ", pair.Select(p => p.Key + " " + p.Value))}; duração média {total / n / 60:0.0} min");
+        Check("Equilíbrio entre facções (24 partidas IA x IA)", ok, $"vitórias: {rates}; por lado: oeste {side[0]}, leste {side[1]}; vitórias do 1º time por confronto (de 4): {string.Join(", ", pair.Select(p => p.Key + " " + p.Value))}; duração média {total / n / 60:0.0} min");
     }
 
     static void VictoryByCentro()
@@ -287,7 +291,7 @@ public static partial class TestRunner
     {
         var w = NewWorld(FactionId.Amazonas, FactionId.MinasGerais);
         ClearUnits(w);
-        var grass = GrassNear(w, w.CenterOf(new Point(16, 30)));
+        var grass = GrassNear(w, w.CenterOf(P(16, 30)));
         var v = w.AddUnit(UnitType.VigiaDaMata, 0, grass);
         string reasonOut = v.AbilityBlock();
         bool usedOut = v.UseAbility();
@@ -309,7 +313,7 @@ public static partial class TestRunner
         var v = w.AddUnit(UnitType.VigiaDaMata, 0, ForestTile(w));
         v.UseAbility();
         float before = v.CamoTime;
-        v.Pos = GrassNear(w, w.CenterOf(new Point(16, 30)));
+        v.Pos = GrassNear(w, w.CenterOf(P(16, 30)));
         Sim(w, 0.1f);
         Check("Camuflagem some ao sair da mata", before > 0 && v.CamoTime <= 0, $"camuflagem antes {before:0.0}s, depois de sair da mata {Math.Max(0, v.CamoTime):0.0}s");
     }
@@ -318,7 +322,7 @@ public static partial class TestRunner
     {
         var w = NewWorld(FactionId.MinasGerais, FactionId.RioGrandeDoSul);
         ClearUnits(w);
-        var g = w.AddUnit(UnitType.GuardiaoDasGerais, 0, GrassNear(w, w.CenterOf(new Point(16, 30))));
+        var g = w.AddUnit(UnitType.GuardiaoDasGerais, 0, GrassNear(w, w.CenterOf(P(16, 30))));
         var atk = w.AddUnit(UnitType.Swordsman, 1, g.Pos + new Vector2(30, 0));
         float normal = Combat.Damage(atk, g);
         g.UseAbility();
@@ -334,7 +338,7 @@ public static partial class TestRunner
     {
         var w = NewWorld(FactionId.RioGrandeDoSul, FactionId.MinasGerais);
         ClearUnits(w);
-        var l = w.AddUnit(UnitType.LanceiroDosPampas, 0, GrassNear(w, w.CenterOf(new Point(16, 30))));
+        var l = w.AddUnit(UnitType.LanceiroDosPampas, 0, GrassNear(w, w.CenterOf(P(16, 30))));
         var t = w.AddUnit(UnitType.Swordsman, 1, l.Pos + new Vector2(40, 0));
         l.MovedTime = 0;
         float normal = Combat.Damage(l, t);
@@ -350,7 +354,7 @@ public static partial class TestRunner
     {
         var w = NewWorld(FactionId.RioGrandeDoSul, FactionId.MinasGerais);
         ClearUnits(w);
-        var l = w.AddUnit(UnitType.LanceiroDosPampas, 0, GrassNear(w, w.CenterOf(new Point(16, 30))));
+        var l = w.AddUnit(UnitType.LanceiroDosPampas, 0, GrassNear(w, w.CenterOf(P(16, 30))));
         var t = w.AddUnit(UnitType.Swordsman, 1, l.Pos + new Vector2(40, 0));
         float baseDmg = l.Def.Dmg;
         w.Players[0].PowerTime = 5; // Ataque Coordenado ativo
@@ -464,7 +468,7 @@ public static partial class TestRunner
         ClearUnits(w);
         var units = new List<Unit>();
         for (int i = 0; i < 30; i++) units.Add(w.AddUnit(UnitType.Swordsman, 0, GrassNear(w, w.CenterOf(new Point(20 + i % 5, 25 + i / 5)))));
-        var dest = w.CenterOf(new Point(44, 30));
+        var dest = w.CenterOf(P(44, 30));
         foreach (var (u, i) in units.Select((u, i) => (u, i))) u.CmdMove(dest + new Vector2((i % 6 - 2.5f) * 32, (i / 6 - 2.5f) * 32));
         int inBlocked = 0;
         for (float t = 0; t < 60; t += Dt)
@@ -481,8 +485,10 @@ public static partial class TestRunner
     {
         var w = NewWorld();
         ClearUnits(w);
-        var u = w.AddUnit(UnitType.Swordsman, 0, w.CenterOf(new Point(25, 24)));
-        var water = w.CenterOf(new Point(MapGen.RiverX(24), 24));
+        var u = w.AddUnit(UnitType.Swordsman, 0, GrassNear(w, w.CenterOf(P(25, 24))));
+        // um trecho reto do rio (fora das curvas, onde a margem encosta na diagonal)
+        int wr = Enumerable.Range(27, 8).First(y => MapGen.RiverX(y - 1) == MapGen.RiverX(y) && MapGen.RiverX(y + 1) == MapGen.RiverX(y));
+        var water = w.CenterOf(new Point(MapGen.RiverX(wr), wr));
         u.CmdMove(water);
         bool flagged = u.Unreachable;
         Sim(w, 20);
@@ -495,9 +501,9 @@ public static partial class TestRunner
     {
         var w = NewWorld();
         ClearUnits(w);
-        var u = w.AddUnit(UnitType.Scout, 0, w.CenterOf(new Point(12, 33)));
-        var a = w.CenterOf(new Point(18, 33));
-        var b = w.CenterOf(new Point(18, 26));
+        var u = w.AddUnit(UnitType.Scout, 0, GrassNear(w, w.CenterOf(P(12, 33))));
+        var a = GrassNear(w, w.CenterOf(P(18, 33)));
+        var b = GrassNear(w, w.CenterOf(P(18, 26)));
         u.Give(new QueuedOrder(UnitOrder.Move, a, null), false);
         u.Give(new QueuedOrder(UnitOrder.Move, b, null), true);
         int queued = u.Queue.Count;
@@ -525,10 +531,10 @@ public static partial class TestRunner
 
     static void Hotkeys()
     {
-        var gs = new GameScreen(new GameConfig { Mode = GameMode.Skirmish, PlayerFaction = FactionId.RioGrandeDoSul, EnemyFaction = FactionId.MinasGerais, Seed = 5 });
+        var gs = new GameScreen(new GameConfig { Mode = GameMode.Skirmish, PlayerFaction = FactionId.RioGrandeDoSul, EnemyFaction = FactionId.MinasGerais, Seed = 5, RandomBases = false });
         gs.SkipIntro();
         var w = gs.W;
-        var l = w.AddUnit(UnitType.LanceiroDosPampas, 0, GrassNear(w, w.CenterOf(new Point(14, 30))));
+        var l = w.AddUnit(UnitType.LanceiroDosPampas, 0, GrassNear(w, w.CenterOf(P(14, 30))));
         gs.SelectForShot(e => e == l);
         Press(gs, Keys.V);
         bool v = l.AbilityActive;
@@ -537,7 +543,7 @@ public static partial class TestRunner
         Press(gs, Keys.C);
         bool c = w.Players[0].PowerActive;
 
-        l.CmdMove(w.CenterOf(new Point(25, 33)));
+        l.CmdMove(w.CenterOf(P(25, 33)));
         Press(gs, Keys.X);
         bool x = l.IsIdle && l.Queue.Count == 0;
 
@@ -571,10 +577,10 @@ public static partial class TestRunner
 
     static (GameScreen gs, World w, Vector2 center) InputArena()
     {
-        var gs = new GameScreen(new GameConfig { Mode = GameMode.Skirmish, PlayerFaction = FactionId.Amazonas, EnemyFaction = FactionId.MinasGerais, Seed = 21 });
+        var gs = new GameScreen(new GameConfig { Mode = GameMode.Skirmish, PlayerFaction = FactionId.Amazonas, EnemyFaction = FactionId.MinasGerais, Seed = 21, RandomBases = false });
         gs.SkipIntro();
         var w = gs.W;
-        var center = GrassNear(w, w.CenterOf(new Point(15, 31)));
+        var center = GrassNear(w, w.CenterOf(P(15, 31)));
         gs.FocusOn(center, 1f);
         MouseFrame(gs, new Vector2(Game1.I.W / 2f, Game1.I.H / 2f)); // estabiliza câmera/estado
         return (gs, w, center);
@@ -745,7 +751,7 @@ public static partial class TestRunner
 
     static void IntroBehaviour()
     {
-        var gs = new GameScreen(new GameConfig { Mode = GameMode.Skirmish, PlayerFaction = FactionId.MinasGerais, EnemyFaction = FactionId.Amazonas, Seed = 3 });
+        var gs = new GameScreen(new GameConfig { Mode = GameMode.Skirmish, PlayerFaction = FactionId.MinasGerais, EnemyFaction = FactionId.Amazonas, Seed = 3, RandomBases = false });
         bool startActive = gs.IntroActive;
         for (int i = 0; i < 30; i++) MouseFrame(gs, new Vector2(400, 300));
         bool frozen = gs.W.Time == 0 && gs.IntroActive;
@@ -753,10 +759,10 @@ public static partial class TestRunner
         bool skipped = !gs.IntroActive;
         for (int i = 0; i < 30; i++) MouseFrame(gs, new Vector2(400, 300));
         bool runs = gs.W.Time > 0.5f;
-        var gs2 = new GameScreen(new GameConfig { Mode = GameMode.Skirmish, PlayerFaction = FactionId.Amazonas, EnemyFaction = FactionId.MinasGerais, Seed = 3 });
+        var gs2 = new GameScreen(new GameConfig { Mode = GameMode.Skirmish, PlayerFaction = FactionId.Amazonas, EnemyFaction = FactionId.MinasGerais, Seed = 3, RandomBases = false });
         int frames = 0;
         while (gs2.IntroActive && frames < 300) { MouseFrame(gs2, new Vector2(400, 300)); frames++; }
-        var gs3 = new GameScreen(new GameConfig { Mode = GameMode.Skirmish, PlayerFaction = FactionId.Amazonas, EnemyFaction = FactionId.MinasGerais, Seed = 3 });
+        var gs3 = new GameScreen(new GameConfig { Mode = GameMode.Skirmish, PlayerFaction = FactionId.Amazonas, EnemyFaction = FactionId.MinasGerais, Seed = 3, RandomBases = false });
         MouseFrame(gs3, new Vector2(400, 300)); MouseFrame(gs3, new Vector2(400, 300), left: true);
         bool click = !gs3.IntroActive;
         Check("Introdução: congela a simulação e pode ser pulada", startActive && frozen && skipped && runs && click && frames * Dt <= GameScreen.IntroDuration + 0.1f,
@@ -774,7 +780,7 @@ public static partial class TestRunner
             var v = w.AddUnit(UnitType.VigiaDaMata, 0, ForestTile(w));
             v.UseAbility();
             int leaves = w.Effects.Count(e => e.Kind == Fx.Leaf);
-            var g = w.AddUnit(UnitType.GuardiaoDasGerais, 1, GrassNear(w, w.CenterOf(new Point(16, 30))));
+            var g = w.AddUnit(UnitType.GuardiaoDasGerais, 1, GrassNear(w, w.CenterOf(P(16, 30))));
             g.UseAbility();
             w.Damage(g, 5, null);
             int chips = w.Effects.Count(e => e.Kind == Fx.Chip);
@@ -796,7 +802,7 @@ public static partial class TestRunner
     {
         (int winner, float time, int k0, int k1, int g0, int g1) Run(bool fx)
         {
-            var w = new World(new GameConfig { Mode = GameMode.Skirmish, PlayerFaction = FactionId.Amazonas, EnemyFaction = FactionId.RioGrandeDoSul, Seed = 1005 });
+            var w = new World(new GameConfig { Mode = GameMode.Skirmish, PlayerFaction = FactionId.Amazonas, EnemyFaction = FactionId.RioGrandeDoSul, Seed = 1005, RandomBases = false });
             w.VisualFx = fx;
             var a0 = new AIController(w, 0); var a1 = new AIController(w, 1);
             while (w.Winner < 0 && w.Time < 900) { w.Update(Dt); a0.Update(Dt); a1.Update(Dt); }
@@ -810,7 +816,7 @@ public static partial class TestRunner
 
     static void EndScreenStats()
     {
-        var cfg = new GameConfig { Mode = GameMode.Skirmish, PlayerFaction = FactionId.RioGrandeDoSul, EnemyFaction = FactionId.MinasGerais, Seed = 1001 };
+        var cfg = new GameConfig { Mode = GameMode.Skirmish, PlayerFaction = FactionId.RioGrandeDoSul, EnemyFaction = FactionId.MinasGerais, Seed = 1001, RandomBases = false };
         var w = new World(cfg);
         var a0 = new AIController(w, 0); var a1 = new AIController(w, 1);
         while (w.Winner < 0 && w.Time < 1800) { w.Update(Dt); a0.Update(Dt); a1.Update(Dt); }

@@ -3,12 +3,38 @@ namespace GuerraDasBandeiras.Gameplay;
 /// <summary>
 /// Mapa "Encontro das Fronteiras" (seção 05 do caderno): vale fictício com mata a oeste,
 /// serra a leste, planície ao sul, rio raso com duas travessias e duas bandeiras no centro.
+/// 80x50 tiles. Na escaramuça e no 1x1 em rede a posição de cada base é sorteada (lado do rio,
+/// norte/centro/sul, pequeno deslocamento e espelhamento vertical), sempre com o mesmo "kit"
+/// de recursos à mesma distância: muda o caminho, não a vantagem. Tudo sai da semente da partida,
+/// então as duas máquinas de uma partida em rede geram exatamente o mesmo mapa.
 /// </summary>
 public static class MapGen
 {
-    public static int RiverX(int y) => 31 + (int)MathF.Round(2.2f * MathF.Sin(y * 0.33f + 0.4f));
-    public static readonly int[] FordRows = { 10, 29 };
-    public const int ShortcutRow = 20;
+    public static int RiverX(int y) => 39 + (int)MathF.Round(2.75f * MathF.Sin(y * 0.264f + 0.4f));
+    public static readonly int[] FordRows = { 12, 36 };
+    public const int ShortcutRow = 25;
+
+    /// <summary>Linhas (centro da base) dos três lugares possíveis de cada lado do rio: norte, centro e sul.</summary>
+    public static readonly int[] BaseRows = { 10, 25, 39 };
+    /// <summary>Lugar clássico (tutorial, missão, testes): time 0 a oeste e time 1 a leste, ambos ao sul.</summary>
+    const int ClassicSlot = 2;
+
+    // "kit" de cada base, em tiles a partir do centro do Centro de Comando, olhando para o rio (dx > 0 = rumo ao rio)
+    static readonly (int dx, int dy)[] KitFood = { (4, -3), (5, -2), (5, -4), (4, -1), (6, -3), (6, -1), (7, -2), (5, 0) };
+    static readonly (int dx, int dy)[] KitFood2 = { (-2, 5), (-3, 4), (-1, 6), (-4, 5) };
+    static readonly (int dx, int dy)[] KitWood = { (-5, -5), (-4, -6), (-3, -5), (-5, -3), (-4, -4), (-6, -4), (-3, -7), (-6, -6) };
+    static readonly (int dx, int dy)[] KitOre = { (2, 5), (3, 6), (4, 5), (1, 6) };
+    /// <summary>Destinos dos caminhos de terra (comida, madeira, minério).</summary>
+    static readonly (int dx, int dy)[] KitRoads = { (5, -2), (-4, -5), (3, 5) };
+
+    /// <summary>Tile do kit da base t: dx no sentido do rio, dy espelhado conforme o sorteio.</summary>
+    public static Point Kit(World w, int t, int dx, int dy)
+    {
+        var st = w.StartTiles[t];
+        return new Point(st.X + 1 + w.BaseDir[t] * dx, st.Y + 1 + w.BaseFlip[t] * dy);
+    }
+
+    static float S(float v) => v * 1.25f;   // o desenho original era 64x40; o mapa novo é 25% maior em cada eixo
 
     public static void Build(World w)
     {
@@ -22,32 +48,44 @@ public static class MapGen
                 w.TileVar[x, y] = (byte)r.Next(256);
             }
 
+        // ---------------- onde fica cada base ----------------
+        bool random = w.Config.UsesRandomBases;
+        int westTeam = random ? r.Next(2) : 0;              // quem fica a oeste também é sorteado
+        for (int t = 0; t < 2; t++)
+        {
+            bool west = t == westTeam;
+            int slot = random ? r.Next(3) : ClassicSlot;
+            int cy = BaseRows[slot] + (random ? r.Next(-1, 2) : 0);
+            int cx = random ? 7 + r.Next(3) : 7;              // 7 a 9 tiles da borda
+            if (!west) cx = W - 1 - cx;
+            w.StartTiles[t] = new Point(cx - 1, cy - 1);
+            w.BaseDir[t] = west ? 1 : -1;
+            w.BaseFlip[t] = random && r.Next(2) == 0 ? -1 : 1;
+        }
+
+        // ---------------- relevo ----------------
         // Mata (oeste/noroeste)
         for (int x = 0; x < W; x++)
             for (int y = 0; y < H; y++)
             {
-                float dx = (x - 13f) / 12.5f, dy = (y - 12.5f) / 9.5f;
+                float dx = (x - S(13f)) / S(12.5f), dy = (y - S(12.5f)) / S(9.5f);
                 float noise = (float)r.NextDouble() * 0.16f;
                 if (dx * dx + dy * dy < 1f - noise) w.Ter[x, y] = Terrain.Forest;
             }
-        // pequeno bosque perto da base leste, para dar algum abrigo a quem estiver lá
-        Blob(w, 59, 22, 3.2f, 2.4f, Terrain.Forest, r);
-        // e um capão na planície sul (caminho de flanco)
-        Blob(w, 22, 35, 2.6f, 1.8f, Terrain.Forest, r);
-        Blob(w, 41, 35, 2.6f, 1.8f, Terrain.Forest, r);
-        // bosques perto das travessias: pontos de emboscada (Bíblia: "bosque oculta parcialmente tropas")
-        Blob(w, 25.5f, 13.5f, 2.2f, 1.8f, Terrain.Forest, r);
-        Blob(w, 38.5f, 6.5f, 2.2f, 1.8f, Terrain.Forest, r);
-        Blob(w, 25.5f, 24.5f, 1.8f, 1.5f, Terrain.Forest, r);
-        Blob(w, 38.5f, 33.5f, 1.8f, 1.5f, Terrain.Forest, r);
+        // bosque do lado leste, capões na planície sul (flancos) e bosques junto às travessias (emboscadas)
+        Blob(w, S(59), S(22), S(3.2f), S(2.4f), Terrain.Forest, r);
+        Blob(w, S(22), S(35), S(2.6f), S(1.8f), Terrain.Forest, r);
+        Blob(w, S(41), S(35), S(2.6f), S(1.8f), Terrain.Forest, r);
+        Blob(w, S(25.5f), S(13.5f), S(2.2f), S(1.8f), Terrain.Forest, r);
+        Blob(w, S(38.5f), S(6.5f), S(2.2f), S(1.8f), Terrain.Forest, r);
+        Blob(w, S(25.5f), S(24.5f), S(1.8f), S(1.5f), Terrain.Forest, r);
+        Blob(w, S(38.5f), S(33.5f), S(1.8f), S(1.5f), Terrain.Forest, r);
 
         // Serra (leste/nordeste)
-        var poly = new Vector2[] { new(42, 2), new(57, 3), new(63, 12), new(57, 21), new(47, 19), new(41, 10) };
+        var poly = new Vector2[] { new(S(42), S(2)), new(S(57), S(3)), new(S(63), S(12)), new(S(57), S(21)), new(S(47), S(19)), new(S(41), S(10)) };
         for (int x = 0; x < W; x++)
             for (int y = 0; y < H; y++)
                 if (PointInPoly(new Vector2(x + 0.5f, y + 0.5f), poly)) w.Ter[x, y] = Terrain.Hill;
-        // colina pequena perto da base oeste (vigia)
-        Blob(w, 4, 37, 2.5f, 1.5f, Terrain.Hill, r);
 
         // Rio com duas travessias rasas
         for (int y = 0; y < H; y++)
@@ -68,51 +106,57 @@ public static class MapGen
             for (int x = cx - 1; x <= cx + 1; x++) w.Ter[x, ShortcutRow] = Terrain.Ford;
         }
 
-        // Chão batido das bases
-        Blob(w, 7.5f, 31.5f, 4.2f, 3.6f, Terrain.Dirt, r, onlyOn: Terrain.Grass);
-        Blob(w, 56.5f, 31.5f, 4.2f, 3.6f, Terrain.Dirt, r, onlyOn: Terrain.Grass);
+        // ---------------- bases: clareira, colina de vigia e chão batido ----------------
+        for (int t = 0; t < 2; t++)
+        {
+            var c = Kit(w, t, 0, 0);
+            // se a base caiu na mata ou na serra, abre uma clareira para a vila
+            for (int x = c.X - 7; x <= c.X + 7; x++)
+                for (int y = c.Y - 7; y <= c.Y + 7; y++)
+                {
+                    if (x < 0 || y < 0 || x >= W || y >= H) continue;
+                    float ex = (x - c.X) / 7.2f, ey = (y - c.Y) / 7.2f;
+                    if (ex * ex + ey * ey < 1f - (float)r.NextDouble() * 0.12f && w.Ter[x, y] is Terrain.Forest or Terrain.Hill) w.Ter[x, y] = Terrain.Grass;
+                }
+            var hill = Kit(w, t, -3, 6);
+            Blob(w, hill.X + 0.5f, hill.Y + 0.5f, 2.5f, 1.5f, Terrain.Hill, r);
+            Blob(w, c.X + 0.5f, c.Y + 0.5f, 4.2f, 3.6f, Terrain.Dirt, r, onlyOn: Terrain.Grass);
+        }
 
         // Bandeiras de controle sobre as travessias
         w.Flags.Add(new ControlPoint { Name = "Bandeira do Norte", Bonus = FlagBonus.Defense, Pos = w.CenterOf(new Point(RiverX(FordRows[0]), FordRows[0])) });
         w.Flags.Add(new ControlPoint { Name = "Bandeira do Sul", Bonus = FlagBonus.Food, Pos = w.CenterOf(new Point(RiverX(FordRows[1]), FordRows[1])) });
 
-        // Bases
-        w.StartTiles[0] = new Point(6, 30);
-        w.StartTiles[1] = new Point(55, 30);
+        // Centros de Comando e unidades iniciais
         for (int t = 0; t < 2; t++)
         {
             var st = w.StartTiles[t];
             w.AddBuilding(BuildingType.Centro, t, st, true);
-            int dir = t == 0 ? 1 : -1;
+            int dir = w.BaseDir[t], vf = w.BaseFlip[t];
             var c = w.CenterOf(new Point(st.X + 1, st.Y + 1));
-            w.AddUnit(UnitType.Worker, t, c + new Vector2(dir * 140, 40));
-            w.AddUnit(UnitType.Worker, t, c + new Vector2(dir * 140, 90));
-            w.AddUnit(UnitType.Worker, t, c + new Vector2(dir * 100, 120));
-            w.AddUnit(UnitType.Scout, t, c + new Vector2(dir * 150, -40));
+            w.AddUnit(UnitType.Worker, t, c + new Vector2(dir * 140, vf * 40));
+            w.AddUnit(UnitType.Worker, t, c + new Vector2(dir * 140, vf * 90));
+            w.AddUnit(UnitType.Worker, t, c + new Vector2(dir * 100, vf * 120));
+            w.AddUnit(UnitType.Scout, t, c + new Vector2(dir * 150, vf * -40));
         }
 
-        // Recursos próximos às bases (espelhados)
+        // Recursos de cada base: o mesmo kit, à mesma distância, virado para o rio
+        for (int t = 0; t < 2; t++)
+        {
+            foreach (var (dx, dy) in KitFood) w.AddResource(Res.Food, Kit(w, t, dx, dy), 200, 19);
+            foreach (var (dx, dy) in KitFood2) w.AddResource(Res.Food, Kit(w, t, dx, dy), 200, 19);
+            foreach (var (dx, dy) in KitWood) w.AddResource(Res.Wood, Kit(w, t, dx, dy), 100, r.Next(2) == 0 ? 3 : 2);
+            foreach (var (dx, dy) in KitOre) w.AddResource(Res.Ore, Kit(w, t, dx, dy), 250, 17 + r.Next(2));
+        }
+
+        // Recursos neutros, espelhados dos dois lados do rio: comida no meio do caminho e minério na planície sul
         foreach (var mirror in new[] { false, true })
         {
-            int M(int x) => mirror ? W - 1 - x : x;
-            // comida
-            foreach (var p in new[] { (11, 28), (12, 29), (12, 27), (11, 30), (13, 28), (13, 30), (14, 29), (12, 31) })
-                w.AddResource(Res.Food, new Point(M(p.Item1), p.Item2), 200, 19);
-            // segunda moita de frutas, um pouco mais longe
-            foreach (var p in new[] { (5, 36), (4, 35), (6, 37), (3, 36) })
-                w.AddResource(Res.Food, new Point(M(p.Item1), p.Item2), 200, 19);
-            // madeira (bosquezinho)
-            foreach (var p in new[] { (2, 26), (3, 25), (4, 26), (2, 28), (3, 27), (1, 27), (4, 24), (1, 25) })
-                w.AddResource(Res.Wood, new Point(M(p.Item1), p.Item2), 100, r.Next(2) == 0 ? 3 : 2);
-            // minério
-            foreach (var p in new[] { (9, 36), (10, 37), (11, 36), (8, 37) })
-                w.AddResource(Res.Ore, new Point(M(p.Item1), p.Item2), 250, 17 + r.Next(2));
-            // comida no meio do caminho
+            int M(float x) { int v = (int)MathF.Round(x); return mirror ? W - 1 - v : v; }
             foreach (var p in new[] { (24, 31), (25, 32), (24, 26), (23, 27), (25, 25) })
-                w.AddResource(Res.Food, new Point(M(p.Item1), p.Item2), 200, 19);
-            // minério na planície
+                w.AddResource(Res.Food, new Point(M(S(p.Item1)), (int)MathF.Round(S(p.Item2))), 200, 19);
             foreach (var p in new[] { (18, 38), (19, 38) })
-                w.AddResource(Res.Ore, new Point(M(p.Item1), p.Item2), 250, 10 + r.Next(2));
+                w.AddResource(Res.Ore, new Point(M(S(p.Item1)), (int)MathF.Round(S(p.Item2))), 250, 10 + r.Next(2));
         }
 
         // Árvores dentro da mata (mais densas nas bordas) e rochas na serra
@@ -140,7 +184,7 @@ public static class MapGen
         AddFactionDecor(w, r);
 
         // Enfeites que não bloqueiam (pedrinhas, tocos)
-        for (int i = 0; i < 90; i++)
+        for (int i = 0; i < 140; i++)
         {
             var p = new Point(r.Next(W), r.Next(H));
             var t = w.Ter[p.X, p.Y];
@@ -158,13 +202,11 @@ public static class MapGen
     {
         for (int t = 0; t < 2; t++)
         {
-            var st = w.StartTiles[t];
-            bool west = t == 0;
-            var start = w.CenterOf(new Point(west ? st.X + 3 : st.X - 1, st.Y + 1));
-            int M(int x) => west ? x : w.W - 1 - x;
+            bool west = w.BaseDir[t] > 0;
+            var start = w.CenterOf(Kit(w, t, 2, 0));
             var targets = new[]
             {
-                new Point(M(12), 29), new Point(M(3), 26), new Point(M(10), 36),
+                Kit(w, t, KitRoads[0].dx, KitRoads[0].dy), Kit(w, t, KitRoads[1].dx, KitRoads[1].dy), Kit(w, t, KitRoads[2].dx, KitRoads[2].dy),
                 new Point(RiverX(FordRows[1]) + (west ? -2 : 2), FordRows[1]),
                 new Point(RiverX(FordRows[0]) + (west ? -2 : 2), FordRows[0]),
             };
@@ -195,19 +237,19 @@ public static class MapGen
         for (int t = 0; t < 2; t++)
         {
             var st = w.StartTiles[t];
-            bool west = t == 0;
-            float back = west ? -1 : 1; // lado de trás da base (longe do rio)
+            float back = -w.BaseDir[t]; // lado de trás da base (longe do rio)
+            float vf = w.BaseFlip[t];
             var c = w.CenterOf(new Point(st.X + 1, st.Y + 1));
             switch (w.Players[t].Faction.Id)
             {
                 case FactionId.Amazonas:
                     for (int i = 0; i < 7; i++)
-                        w.Decors.Add(new Decor { Pos = c + new Vector2(back * (150 + r.Next(60)), -150 + i * 50 + r.Next(-10, 10)), Sprite = 12, Scale = 1.6f + (i % 3) * 0.2f });
+                        w.Decors.Add(new Decor { Pos = c + new Vector2(back * (150 + r.Next(60)), vf * (-150 + i * 50 + r.Next(-10, 10))), Sprite = 12, Scale = 1.6f + (i % 3) * 0.2f });
                     break;
                 // Minas: a identidade vem da arquitetura de pedra e dos carrinhos de minério nos prédios
                 // (pedras soltas aqui seriam confundidas com minério coletável)
                 case FactionId.RioGrandeDoSul:
-                    w.Decors.Add(new Decor { Pos = c + new Vector2(back * 170, -110), Sprite = 14, Scale = 1.5f, Structure = true });
+                    w.Decors.Add(new Decor { Pos = c + new Vector2(back * 170, vf * -110), Sprite = 14, Scale = 1.5f, Structure = true });
                     break;
             }
         }

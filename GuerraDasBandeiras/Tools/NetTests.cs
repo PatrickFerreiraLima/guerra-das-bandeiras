@@ -21,8 +21,8 @@ public static partial class TestRunner
         return (new NetPeer(s), new NetPeer(c));
     }
 
-    static GameConfig VersusCfg(int local, int seed = 77, FactionId host = FactionId.Amazonas, FactionId guest = FactionId.RioGrandeDoSul) =>
-        new() { Mode = GameMode.Versus, PlayerFaction = host, EnemyFaction = guest, Seed = seed, LocalTeam = local, Names = new[] { "Anfitrião", "Convidado" } };
+    static GameConfig VersusCfg(int local, int seed = 77, FactionId host = FactionId.Amazonas, FactionId guest = FactionId.RioGrandeDoSul, bool randomBases = false) =>
+        new() { Mode = GameMode.Versus, PlayerFaction = host, EnemyFaction = guest, Seed = seed, LocalTeam = local, Names = new[] { "Anfitrião", "Convidado" }, RandomBases = randomBases };
 
     /// <summary>
     /// Jogador automático que só age por ordens (Cmd), exatamente como uma pessoa pela interface:
@@ -86,8 +86,9 @@ public static partial class TestRunner
     {
         const string name = "Rede: lockstep entre 2 jogos via TCP mantém os mundos idênticos";
         var (ph, pg) = PeerPair();
-        var wa = new World(VersusCfg(0));
-        var wb = new World(VersusCfg(1));
+        // bases sorteadas: as duas máquinas precisam gerar o mesmo mapa a partir da semente
+        var wa = new World(VersusCfg(0, randomBases: true));
+        var wb = new World(VersusCfg(1, randomBases: true));
         var la = new Lockstep(wa, ph, 0);
         var lb = new Lockstep(wb, pg, 1);
         var ba = new CmdBot(wa, la);

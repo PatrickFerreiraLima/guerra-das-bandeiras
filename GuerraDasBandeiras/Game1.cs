@@ -87,6 +87,12 @@ public class Game1 : Game
             Exit();
             return;
         }
+        if (_args.Length >= 2 && _args[0] == "--maps")
+        {
+            Tools.SpriteSheetDump.RunMaps(GraphicsDevice, _sb, _args[1]);
+            Exit();
+            return;
+        }
         if (_args.Length >= 2 && _args[0] == "--chars")
         {
             Tools.SpriteSheetDump.RunChars(GraphicsDevice, _sb, _args[1]);
